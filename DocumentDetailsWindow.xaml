@@ -1,0 +1,211 @@
+<Window x:Class="TextLabClient.DocumentDetailsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Détails du Document" Height="700" Width="1000"
+        WindowStartupLocation="CenterOwner">
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- En-tête avec titre du document -->
+        <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1" Padding="15">
+            <StackPanel>
+                <TextBlock Name="DocumentTitleText" Text="Chargement..." FontSize="18" FontWeight="Bold"/>
+                <TextBlock Name="DocumentPathText" Text="" FontSize="12" Foreground="Gray" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+        
+        <!-- Contenu principal avec onglets -->
+        <TabControl Grid.Row="1" Margin="10">
+            
+            <!-- Onglet Informations -->
+            <TabItem Header="📋 Informations">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Colonne gauche -->
+                        <StackPanel Grid.Column="0" Margin="0,0,15,0">
+                            <GroupBox Header="Métadonnées" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="ID:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentIdText" Text="-"/>
+                                    </Grid>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Titre:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentTitleDetailText" Text="-" TextWrapping="Wrap"/>
+                                    </Grid>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Catégorie:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentCategoryText" Text="-"/>
+                                    </Grid>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Repository:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentRepositoryText" Text="-"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+                            
+                            <GroupBox Header="Fichier">
+                                <StackPanel>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Chemin Git:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentGitPathText" Text="-" TextWrapping="Wrap"/>
+                                    </Grid>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Taille:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentSizeText" Text="-"/>
+                                    </Grid>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Version:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentVersionText" Text="-"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                        
+                        <!-- Colonne droite -->
+                        <StackPanel Grid.Column="1">
+                            <GroupBox Header="Dates" Margin="0,0,0,15">
+                                <StackPanel>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Créé le:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentCreatedText" Text="-"/>
+                                    </Grid>
+                                    <Grid Margin="5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Modifié le:" FontWeight="Bold" Width="120"/>
+                                        <TextBlock Grid.Column="1" Name="DocumentUpdatedText" Text="-"/>
+                                    </Grid>
+                                </StackPanel>
+                            </GroupBox>
+                            
+                            <GroupBox Header="Actions">
+                                <StackPanel>
+                                    <Button Name="RefreshButton" Content="🔄 Actualiser" Margin="5" Click="RefreshButton_Click"/>
+                                    <Button Name="OpenInBrowserButton" Content="🌐 Voir sur GitHub" Margin="5" Click="OpenInBrowserButton_Click"/>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+            
+            <!-- Onglet Contenu -->
+            <TabItem Header="📄 Contenu">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10" Background="#F8F8F8">
+                        <TextBlock Text="Contenu du document:" FontWeight="Bold" VerticalAlignment="Center" Margin="5"/>
+                        <Button Name="CopyContentButton" Content="📋 Copier" Margin="10,5,5,5" Click="CopyContentButton_Click"/>
+                        <TextBlock Name="ContentSizeText" Text="" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="10" Foreground="Gray"/>
+                    </StackPanel>
+                    
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="10">
+                        <TextBox Name="DocumentContentTextBox" 
+                                 IsReadOnly="True" 
+                                 TextWrapping="Wrap" 
+                                 AcceptsReturn="True"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 Background="#FAFAFA"
+                                 BorderThickness="1"
+                                 BorderBrush="#E0E0E0"
+                                 Padding="10"
+                                 Text="Chargement du contenu..."/>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+            
+            <!-- Onglet Versions -->
+            <TabItem Header="📚 Versions">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10" Background="#F8F8F8">
+                        <TextBlock Text="Historique des versions:" FontWeight="Bold" VerticalAlignment="Center" Margin="5"/>
+                        <TextBlock Name="VersionCountText" Text="" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="10" Foreground="Gray"/>
+                    </StackPanel>
+                    
+                    <DataGrid Grid.Row="1" Name="VersionsDataGrid" Margin="10" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="100"/>
+                            <DataGridTextColumn Header="Commit SHA" Binding="{Binding CommitSha}" Width="120"/>
+                            <DataGridTextColumn Header="Auteur" Binding="{Binding Author}" Width="150"/>
+                            <DataGridTextColumn Header="Date" Binding="{Binding Date, StringFormat=dd/MM/yyyy HH:mm}" Width="120"/>
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
+                            <DataGridTextColumn Header="Changements" Binding="{Binding ChangesCount}" Width="100"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+            
+        </TabControl>
+        
+        <!-- Barre de status et boutons -->
+        <Border Grid.Row="2" Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0" Name="StatusText" Text="Prêt" Margin="15,10" VerticalAlignment="Center"/>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="15,10">
+                    <Button Name="CloseButton" Content="Fermer" Padding="15,5" Click="CloseButton_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window> 

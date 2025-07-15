@@ -285,7 +285,7 @@ namespace TextLabClient
             {
                 if (item.Type == "document" && item.Tag is Document doc)
                 {
-                    SetStatus($"Document sélectionné: {doc.Title} (ID: {doc.Id})");
+                    SetStatus($"Document sélectionné: {doc.Title} (ID: {doc.Id}) - Double-cliquez pour voir les détails");
                 }
                 else if (item.Type == "folder")
                 {
@@ -295,6 +295,37 @@ namespace TextLabClient
                 {
                     SetStatus($"Repository sélectionné: {repo.Name}");
                 }
+            }
+        }
+
+        private void DocumentsTreeView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (DocumentsTreeView.SelectedItem is DocumentTreeItem item)
+            {
+                if (item.Type == "document" && item.Tag is Document doc)
+                {
+                    OpenDocumentDetails(doc);
+                }
+            }
+        }
+
+        private void OpenDocumentDetails(Document document)
+        {
+            try
+            {
+                SetStatus($"Ouverture des détails pour: {document.Title}");
+                
+                var detailsWindow = new DocumentDetailsWindow(document, _apiService);
+                detailsWindow.Owner = this;
+                detailsWindow.ShowDialog();
+                
+                SetStatus("Fenêtre de détails fermée");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de l'ouverture des détails: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'ouverture des détails:\n{ex.Message}", 
+                              "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

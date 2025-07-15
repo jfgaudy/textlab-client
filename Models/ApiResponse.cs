@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 
 namespace TextLabClient.Models
 {
@@ -17,6 +18,33 @@ namespace TextLabClient.Models
         public int Page { get; set; }
         public int Size { get; set; }
         public int Pages { get; set; }
+    }
+
+    public class DocumentContent
+    {
+        public string Content { get; set; } = string.Empty;
+        public string GitPath { get; set; } = string.Empty;
+        public string Version { get; set; } = string.Empty;
+        public DateTime LastModified { get; set; }
+        public string RepositoryName { get; set; } = string.Empty;
+        public int FileSizeBytes { get; set; }
+    }
+
+    public class DocumentVersions
+    {
+        public string DocumentId { get; set; } = string.Empty;
+        public int TotalVersions { get; set; }
+        public List<DocumentVersion> Versions { get; set; } = new List<DocumentVersion>();
+    }
+
+    public class DocumentVersion
+    {
+        public string Version { get; set; } = string.Empty;
+        public string CommitSha { get; set; } = string.Empty;
+        public string Author { get; set; } = string.Empty;
+        public DateTime Date { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public int ChangesCount { get; set; }
     }
 
     public class HealthInfo

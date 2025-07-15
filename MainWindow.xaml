@@ -68,7 +68,7 @@
                     <Button Name="LoadDocumentsButton" Content="Charger Documents" Margin="20,0,0,0" Click="LoadDocumentsButton_Click" IsEnabled="False"/>
                 </StackPanel>
                 
-                <TreeView Grid.Row="1" Name="DocumentsTreeView" Margin="10,0,0,0" SelectedItemChanged="DocumentsTreeView_SelectedItemChanged">
+                <TreeView Grid.Row="1" Name="DocumentsTreeView" Margin="10,0,0,0" SelectedItemChanged="DocumentsTreeView_SelectedItemChanged" MouseDoubleClick="DocumentsTreeView_MouseDoubleClick">
                     <TreeView.ItemTemplate>
                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                             <StackPanel Orientation="Horizontal">

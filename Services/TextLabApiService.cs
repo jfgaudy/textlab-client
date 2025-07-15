@@ -253,6 +253,89 @@ namespace TextLabClient.Services
             }
         }
 
+        // Nouvelles méthodes pour la visualisation détaillée des documents
+        
+        public async Task<Document?> GetDocumentDetailsAsync(string documentId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    System.Diagnostics.Debug.WriteLine($"Détails document {documentId}: {content}");
+                    
+                    var document = JsonConvert.DeserializeObject<Document>(content);
+                    return document;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Erreur récupération détails: {response.StatusCode}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentDetailsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<DocumentContent?> GetDocumentContentAsync(string documentId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    System.Diagnostics.Debug.WriteLine($"Contenu document {documentId}: {content.Length} caractères");
+                    
+                    var documentContent = JsonConvert.DeserializeObject<DocumentContent>(content);
+                    return documentContent;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Erreur récupération contenu: {response.StatusCode}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentContentAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<DocumentVersions?> GetDocumentVersionsAsync(string documentId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    System.Diagnostics.Debug.WriteLine($"Versions document {documentId}: {content}");
+                    
+                    var versions = JsonConvert.DeserializeObject<DocumentVersions>(content);
+                    return versions;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Erreur récupération versions: {response.StatusCode}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentVersionsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
         public void Dispose()
         {
             // HttpClient statique, pas de dispose nécessaire
