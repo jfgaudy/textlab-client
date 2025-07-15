@@ -50,7 +50,16 @@
                     <TextBlock Text="Repositories" FontWeight="Bold" DockPanel.Dock="Top" 
                               Background="#E0E0E0" Padding="10,5"/>
                     <TreeView Name="RepositoriesTreeView" DockPanel.Dock="Fill"
-                             SelectedItemChanged="RepositoriesTreeView_SelectedItemChanged"/>
+                             SelectedItemChanged="RepositoriesTreeView_SelectedItemChanged">
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                    <TextBlock Text="{Binding ItemCount}" Foreground="Gray" Margin="5,0,0,0"/>
+                                </StackPanel>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
                 </DockPanel>
             </Border>
             
@@ -67,42 +76,109 @@
                     </Border>
                     
                     <!-- Contenu principal -->
-                    <ScrollViewer DockPanel.Dock="Fill" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Name="MainContentPanel" Margin="20">
-                            <!-- Zone de connexion -->
-                            <GroupBox Header="État de la Connexion" Margin="0,0,0,20">
-                                <StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                        <TextBlock Text="Statut:" FontWeight="Bold" Width="80"/>
-                                        <TextBlock Name="ConnectionStatusText" Text="Non testé" Foreground="Gray"/>
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                        <TextBlock Text="API URL:" FontWeight="Bold" Width="80"/>
-                                        <TextBlock Name="CurrentApiUrlText" Text="-"/>
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="Version:" FontWeight="Bold" Width="80"/>
-                                        <TextBlock Name="ApiVersionText" Text="-"/>
-                                    </StackPanel>
+                    <TabControl Name="MainTabControl" DockPanel.Dock="Fill">
+                        <!-- Onglet Accueil -->
+                        <TabItem Name="HomeTab" Header="🏠 Accueil" IsSelected="True">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel Name="MainContentPanel" Margin="20">
+                                    <!-- Zone de connexion -->
+                                    <GroupBox Header="État de la Connexion" Margin="0,0,0,20">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                <TextBlock Text="Statut:" FontWeight="Bold" Width="80"/>
+                                                <TextBlock Name="ConnectionStatusText" Text="Non testé" Foreground="Gray"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                <TextBlock Text="API URL:" FontWeight="Bold" Width="80"/>
+                                                <TextBlock Name="CurrentApiUrlText" Text="-"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Version:" FontWeight="Bold" Width="80"/>
+                                                <TextBlock Name="ApiVersionText" Text="-"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </GroupBox>
+                                    
+                                    <!-- Instructions -->
+                                    <GroupBox Header="Instructions de Démarrage">
+                                        <StackPanel>
+                                            <TextBlock TextWrapping="Wrap" Margin="0,0,0,10">
+                                                <Run Text="1. Vérifiez que l'API TextLab est démarrée"/>
+                                                <LineBreak/>
+                                                <Run Text="2. Configurez l'URL de l'API dans la barre d'outils"/>
+                                                <LineBreak/>
+                                                <Run Text="3. Cliquez sur 'Test API' pour vérifier la connexion"/>
+                                                <LineBreak/>
+                                                <Run Text="4. Une fois connecté, les repositories apparaîtront dans le panneau de gauche"/>
+                                                <LineBreak/>
+                                                <Run Text="5. Sélectionnez un repository pour voir ses documents"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </GroupBox>
                                 </StackPanel>
-                            </GroupBox>
-                            
-                            <!-- Instructions -->
-                            <GroupBox Header="Instructions de Démarrage">
-                                <StackPanel>
-                                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,10">
-                                        <Run Text="1. Vérifiez que l'API TextLab est démarrée"/>
-                                        <LineBreak/>
-                                        <Run Text="2. Configurez l'URL de l'API dans la barre d'outils"/>
-                                        <LineBreak/>
-                                        <Run Text="3. Cliquez sur 'Test API' pour vérifier la connexion"/>
-                                        <LineBreak/>
-                                        <Run Text="4. Une fois connecté, les repositories apparaîtront dans le panneau de gauche"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </GroupBox>
-                        </StackPanel>
-                    </ScrollViewer>
+                            </ScrollViewer>
+                        </TabItem>
+                        
+                        <!-- Onglet Documents -->
+                        <TabItem Name="DocumentsTab" Header="📄 Documents" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                
+                                <!-- En-tête documents -->
+                                <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="15,10">
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                            <TextBlock Name="DocumentsHeaderText" FontSize="16" FontWeight="Bold" 
+                                                      Text="Documents" VerticalAlignment="Center"/>
+                                            <TextBlock Name="DocumentsCountText" Text="" Foreground="Gray" 
+                                                      Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Name="RefreshDocumentsButton" Content="🔄" Width="30" Height="30" 
+                                                   ToolTip="Actualiser les documents" Click="RefreshDocumentsButton_Click"/>
+                                            <Button Name="NewDocumentButton" Content="➕" Width="30" Height="30" 
+                                                   ToolTip="Nouveau document" Margin="5,0,0,0" Click="NewDocumentButton_Click"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                                
+                                <!-- Liste documents -->
+                                <DataGrid Name="DocumentsDataGrid" Grid.Row="1" 
+                                         AutoGenerateColumns="False"
+                                         CanUserAddRows="False"
+                                         CanUserDeleteRows="False"
+                                         IsReadOnly="True"
+                                         GridLinesVisibility="Horizontal"
+                                         HeadersVisibility="Column"
+                                         SelectionMode="Single"
+                                         SelectionChanged="DocumentsDataGrid_SelectionChanged"
+                                         MouseDoubleClick="DocumentsDataGrid_MouseDoubleClick">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="📄" Binding="{Binding TypeIcon}" Width="30"/>
+                                        <DataGridTextColumn Header="Titre" Binding="{Binding Title}" Width="300"/>
+                                        <DataGridTextColumn Header="Catégorie" Binding="{Binding Category}" Width="120"/>
+                                        <DataGridTextColumn Header="Modifié" Binding="{Binding UpdatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}" Width="130"/>
+                                        <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="80"/>
+                                        <DataGridTextColumn Header="Chemin" Binding="{Binding GitPath}" Width="*"/>
+                                    </DataGrid.Columns>
+                                    
+                                    <DataGrid.RowStyle>
+                                        <Style TargetType="DataGridRow">
+                                            <Setter Property="ToolTip" Value="{Binding Title}"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#E3F2FD"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.RowStyle>
+                                </DataGrid>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
                 </DockPanel>
             </Border>
         </Grid>

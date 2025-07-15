@@ -1,6 +1,9 @@
 using System;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using TextLabClient.Services;
 using TextLabClient.Models;
 
@@ -9,15 +12,24 @@ namespace TextLabClient
     public partial class MainWindow : Window
     {
         private readonly TextLabApiService _apiService;
+        private readonly ObservableCollection<TreeViewItemModel> _treeViewItems;
+        private readonly ObservableCollection<DocumentDisplayModel> _documents;
+        private Repository? _selectedRepository;
 
         public MainWindow()
         {
             InitializeComponent();
             _apiService = new TextLabApiService();
+            _treeViewItems = new ObservableCollection<TreeViewItemModel>();
+            _documents = new ObservableCollection<DocumentDisplayModel>();
             
             // Initialisation
             LoadSettings();
             SetStatus("Application démarrée");
+            
+            // Binding des collections
+            RepositoriesTreeView.ItemsSource = _treeViewItems;
+            DocumentsDataGrid.ItemsSource = _documents;
         }
 
         private void LoadSettings()
@@ -107,29 +119,34 @@ namespace TextLabClient
                 SetStatus("Chargement des repositories...");
                 var repositories = await _apiService.GetRepositoriesAsync();
                 
-                RepositoriesTreeView.Items.Clear();
+                _treeViewItems.Clear();
                 
                 if (repositories != null && repositories.Count > 0)
                 {
                     foreach (var repo in repositories)
                     {
-                        var treeItem = new TreeViewItem
+                        var displayName = $"📁 {repo.Name}";
+                        if (repo.IsDefault) displayName += " (défaut)";
+                        
+                        var treeItem = new TreeViewItemModel
                         {
-                            Header = $"📁 {repo.Name} {(repo.IsDefault ? "(défaut)" : "")}",
+                            DisplayName = displayName,
+                            ItemType = "repository",
                             Tag = repo
                         };
-                        RepositoriesTreeView.Items.Add(treeItem);
+                        
+                        _treeViewItems.Add(treeItem);
                     }
                     SetStatus($"{repositories.Count} repository(s) chargé(s)");
                 }
                 else
                 {
-                    var noRepoItem = new TreeViewItem
+                    var noRepoItem = new TreeViewItemModel
                     {
-                        Header = "Aucun repository trouvé",
-                        IsEnabled = false
+                        DisplayName = "Aucun repository trouvé",
+                        ItemType = "empty"
                     };
-                    RepositoriesTreeView.Items.Add(noRepoItem);
+                    _treeViewItems.Add(noRepoItem);
                     SetStatus("Aucun repository trouvé");
                 }
             }
@@ -151,12 +168,19 @@ namespace TextLabClient
             }
         }
 
-        private void RepositoriesTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        private async void RepositoriesTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            if (e.NewValue is TreeViewItem item && item.Tag is Repository repository)
+            if (e.NewValue is TreeViewItemModel item && item.Tag is Repository repository)
             {
-                MainContentHeader.Text = $"Repository: {repository.Name}";
+                _selectedRepository = repository;
+                DocumentsHeaderText.Text = $"Documents - {repository.Name}";
                 SetStatus($"Repository sélectionné: {repository.Name}");
+                
+                // Afficher l'onglet Documents et charger les documents
+                DocumentsTab.Visibility = Visibility.Visible;
+                MainTabControl.SelectedItem = DocumentsTab;
+                
+                await LoadDocuments(repository.Id);
             }
         }
 
@@ -175,6 +199,89 @@ namespace TextLabClient
         private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        private async System.Threading.Tasks.Task LoadDocuments(string repositoryId)
+        {
+            try
+            {
+                SetStatus("Chargement des documents...");
+                var documents = await _apiService.GetDocumentsAsync(repositoryId);
+                
+                _documents.Clear();
+                
+                if (documents != null && documents.Count > 0)
+                {
+                    foreach (var doc in documents)
+                    {
+                        var displayModel = new DocumentDisplayModel
+                        {
+                            Id = doc.Id,
+                            Title = doc.Title,
+                            Content = doc.Content,
+                            Category = doc.Category,
+                            GitPath = doc.GitPath,
+                            CommitSha = doc.CommitSha,
+                            Version = doc.Version,
+                            RepositoryId = doc.RepositoryId,
+                            CreatedAt = doc.CreatedAt,
+                            UpdatedAt = doc.UpdatedAt
+                        };
+                        _documents.Add(displayModel);
+                    }
+                    
+                    DocumentsCountText.Text = $"({documents.Count} document(s))";
+                    SetStatus($"{documents.Count} document(s) chargé(s)");
+                }
+                else
+                {
+                    DocumentsCountText.Text = "(aucun document)";
+                    SetStatus("Aucun document trouvé dans ce repository");
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur chargement documents: {ex.Message}");
+                DocumentsCountText.Text = "(erreur)";
+            }
+        }
+
+        private async void RefreshDocumentsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedRepository != null)
+            {
+                await LoadDocuments(_selectedRepository.Id);
+            }
+        }
+
+        private void NewDocumentButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedRepository == null)
+            {
+                MessageBox.Show("Veuillez d'abord sélectionner un repository", "Information", 
+                              MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            
+            MessageBox.Show("Création de nouveau document - À implémenter en Phase 4", "Information", 
+                          MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void DocumentsDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (DocumentsDataGrid.SelectedItem is DocumentDisplayModel document)
+            {
+                SetStatus($"Document sélectionné: {document.Title}");
+            }
+        }
+
+        private void DocumentsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (DocumentsDataGrid.SelectedItem is DocumentDisplayModel document)
+            {
+                MessageBox.Show($"Ouverture du document: {document.Title}\n\nÀ implémenter en Phase 3", 
+                              "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
 
         protected override void OnClosed(EventArgs e)
