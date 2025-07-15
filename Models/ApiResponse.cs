@@ -10,6 +10,15 @@ namespace TextLabClient.Models
         public string? Error { get; set; }
     }
 
+    public class DocumentsResponse
+    {
+        public List<Document> Documents { get; set; } = new List<Document>();
+        public int Total { get; set; }
+        public int Page { get; set; }
+        public int Size { get; set; }
+        public int Pages { get; set; }
+    }
+
     public class HealthInfo
     {
         public string Status { get; set; } = string.Empty;
@@ -20,7 +29,7 @@ namespace TextLabClient.Models
 
     public class AppSettings
     {
-        public string ApiUrl { get; set; } = "http://localhost:8000";
+        public string ApiUrl { get; set; } = "https://textlab-api.onrender.com";
         public string? GitHubToken { get; set; }
         public int FontSize { get; set; } = 12;
         public string Theme { get; set; } = "Default";

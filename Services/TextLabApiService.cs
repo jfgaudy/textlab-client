@@ -10,22 +10,19 @@ namespace TextLabClient.Services
 {
     public class TextLabApiService
     {
-        private readonly HttpClient _httpClient;
-        private string _baseUrl = "http://localhost:8000";
+        private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private string _baseUrl = "https://textlab-api.onrender.com";
 
         public bool IsConnected { get; private set; }
 
         public TextLabApiService()
         {
-            _httpClient = new HttpClient();
-            _httpClient.Timeout = TimeSpan.FromSeconds(30);
         }
 
         public void SetBaseUrl(string baseUrl)
         {
             _baseUrl = baseUrl.TrimEnd('/');
-            _httpClient.BaseAddress = new Uri(_baseUrl);
-            IsConnected = false; // Reset connection status
+            IsConnected = false;
         }
 
         public async Task<HealthInfo?> TestConnectionAsync()
@@ -50,7 +47,7 @@ namespace TextLabClient.Services
             catch (Exception)
             {
                 IsConnected = false;
-                throw; // Re-lancer l'exception pour que l'UI puisse la gérer
+                return null;
             }
         }
 
@@ -58,211 +55,207 @@ namespace TextLabClient.Services
         {
             try
             {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/admin/repositories");
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/repositories");
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
-                    var repositories = JsonConvert.DeserializeObject<List<Repository>>(content);
-                    return repositories ?? new List<Repository>();
-                }
-                else
-                {
-                    throw new HttpRequestException($"Erreur API: {response.StatusCode} - {response.ReasonPhrase}");
-                }
-            }
-            catch (Exception)
-            {
-                throw; // Re-lancer pour gestion par l'UI
-            }
-        }
-
-        public async Task<List<Document>?> GetDocumentsAsync(string? repositoryId = null)
-        {
-            try
-            {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var url = $"{_baseUrl}/api/v1/documents/";
-                if (!string.IsNullOrEmpty(repositoryId))
-                {
-                    url += $"?repository_id={repositoryId}";
-                }
-
-                var response = await _httpClient.GetAsync(url);
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var documents = JsonConvert.DeserializeObject<List<Document>>(content);
-                    return documents ?? new List<Document>();
-                }
-                else
-                {
-                    throw new HttpRequestException($"Erreur API: {response.StatusCode} - {response.ReasonPhrase}");
-                }
-            }
-            catch (Exception)
-            {
-                throw;
-            }
-        }
-
-        public async Task<Document?> GetDocumentAsync(string documentId)
-        {
-            try
-            {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}");
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var document = JsonConvert.DeserializeObject<Document>(content);
-                    return document;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
+                    
+                    // Debug: Afficher la réponse brute
+                    System.Diagnostics.Debug.WriteLine($"Réponse brute repositories: {content}");
+                    
+                    // D'après la documentation, l'API retourne directement une liste de repositories
+                    try
+                    {
+                        var repositories = JsonConvert.DeserializeObject<List<Repository>>(content);
+                        if (repositories != null)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Repositories trouvés via Liste directe: {repositories.Count}");
+                            return repositories;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation Liste: {ex.Message}");
+                    }
+                    
+                    // Fallback : essayer avec ApiResponse si la structure a changé
+                    try
+                    {
+                        var apiResponse = JsonConvert.DeserializeObject<ApiResponse<List<Repository>>>(content);
+                        if (apiResponse?.Data != null)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Repositories trouvés via ApiResponse: {apiResponse.Data.Count}");
+                            return apiResponse.Data;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation ApiResponse: {ex.Message}");
+                    }
+                    
                     return null;
                 }
                 else
                 {
-                    throw new HttpRequestException($"Erreur API: {response.StatusCode} - {response.ReasonPhrase}");
+                    System.Diagnostics.Debug.WriteLine($"Erreur HTTP: {response.StatusCode} - {response.ReasonPhrase}");
+                    return null;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw;
+                System.Diagnostics.Debug.WriteLine($"Exception GetRepositoriesAsync: {ex.Message}");
+                return null;
             }
         }
 
-        public async Task<string?> GetDocumentContentAsync(string documentId)
+        public async Task<List<Document>?> GetDocumentsAsync(string repositoryId)
         {
             try
             {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content");
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/?repository_id={repositoryId}");
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
-                    var contentResponse = JsonConvert.DeserializeObject<dynamic>(content);
-                    return contentResponse?.content?.ToString();
+                    System.Diagnostics.Debug.WriteLine($"Réponse documents pour repo {repositoryId}: {content}");
+                    
+                    // D'après la documentation, la réponse a cette structure avec pagination
+                    try
+                    {
+                        var documentResponse = JsonConvert.DeserializeObject<DocumentsResponse>(content);
+                        if (documentResponse?.Documents != null)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Documents trouvés: {documentResponse.Documents.Count}");
+                            return documentResponse.Documents;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation DocumentsResponse: {ex.Message}");
+                    }
+                    
+                    // Fallback : essayer avec ApiResponse
+                    try
+                    {
+                        var apiResponse = JsonConvert.DeserializeObject<ApiResponse<List<Document>>>(content);
+                        if (apiResponse?.Data != null)
+                        {
+                            return apiResponse.Data;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation ApiResponse: {ex.Message}");
+                    }
+                    
+                    return null;
                 }
                 else
                 {
-                    throw new HttpRequestException($"Erreur API: {response.StatusCode} - {response.ReasonPhrase}");
+                    System.Diagnostics.Debug.WriteLine($"Erreur HTTP documents: {response.StatusCode} - {response.ReasonPhrase}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<Document?> GetDocumentAsync(string repositoryId, string documentId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(content);
+                    return apiResponse?.Data;
+                }
+                else
+                {
+                    return null;
                 }
             }
             catch (Exception)
             {
-                throw;
+                return null;
             }
         }
 
-        public async Task<Document?> CreateDocumentAsync(string title, string content, string category, string repositoryId, string? filePath = null)
+        public async Task<Document?> UpdateDocumentAsync(string repositoryId, string documentId, Document document)
         {
             try
             {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var createRequest = new
-                {
-                    repository_id = repositoryId,
-                    title = title,
-                    content = content,
-                    category = category,
-                    file_path = filePath
-                };
-
-                var json = JsonConvert.SerializeObject(createRequest);
-                var stringContent = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/", stringContent);
+                var json = JsonConvert.SerializeObject(document);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                
+                var response = await _httpClient.PutAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}", content);
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var responseContent = await response.Content.ReadAsStringAsync();
-                    var document = JsonConvert.DeserializeObject<Document>(responseContent);
-                    return document;
+                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(responseContent);
+                    return apiResponse?.Data;
                 }
                 else
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"Erreur création document: {response.StatusCode} - {errorContent}");
+                    return null;
                 }
             }
             catch (Exception)
             {
-                throw;
+                return null;
             }
         }
 
-        public async Task<Document?> UpdateDocumentAsync(string documentId, string title, string content, string category)
+        public async Task<Document?> CreateDocumentAsync(string repositoryId, Document document)
         {
             try
             {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var updateRequest = new
-                {
-                    title = title,
-                    content = content,
-                    category = category
-                };
-
-                var json = JsonConvert.SerializeObject(updateRequest);
-                var stringContent = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PutAsync($"{_baseUrl}/api/v1/documents/{documentId}", stringContent);
+                var json = JsonConvert.SerializeObject(document);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                
+                var response = await _httpClient.PostAsync($"{_baseUrl}/repositories/{repositoryId}/documents", content);
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var responseContent = await response.Content.ReadAsStringAsync();
-                    var document = JsonConvert.DeserializeObject<Document>(responseContent);
-                    return document;
+                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(responseContent);
+                    return apiResponse?.Data;
                 }
                 else
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new HttpRequestException($"Erreur mise à jour document: {response.StatusCode} - {errorContent}");
+                    return null;
                 }
             }
             catch (Exception)
             {
-                throw;
+                return null;
             }
         }
 
-        public async Task<bool> DeleteDocumentAsync(string documentId)
+        public async Task<bool> DeleteDocumentAsync(string repositoryId, string documentId)
         {
             try
             {
-                if (!IsConnected)
-                    throw new InvalidOperationException("Pas de connexion établie avec l'API");
-
-                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/v1/documents/{documentId}");
+                var response = await _httpClient.DeleteAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}");
+                
                 return response.IsSuccessStatusCode;
             }
             catch (Exception)
             {
-                throw;
+                return false;
             }
         }
 
         public void Dispose()
         {
-            _httpClient?.Dispose();
+            // HttpClient statique, pas de dispose nécessaire
         }
     }
 } 
