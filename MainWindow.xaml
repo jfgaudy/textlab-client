@@ -1,0 +1,120 @@
+<Window x:Class="TextLabClient.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TextLab Client" Height="600" Width="900"
+        WindowStartupLocation="CenterScreen">
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>   <!-- Menu/Toolbar -->
+            <RowDefinition Height="*"/>      <!-- Contenu principal -->
+            <RowDefinition Height="Auto"/>   <!-- Status bar -->
+        </Grid.RowDefinitions>
+        
+        <!-- Menu et Toolbar -->
+        <DockPanel Grid.Row="0">
+            <Menu DockPanel.Dock="Top">
+                <MenuItem Header="_Fichier">
+                    <MenuItem Name="ExitMenuItem" Header="_Quitter" Click="ExitMenuItem_Click"/>
+                </MenuItem>
+                <MenuItem Header="_Outils">
+                    <MenuItem Name="SettingsMenuItem" Header="_Paramètres" Click="SettingsMenuItem_Click"/>
+                    <MenuItem Name="TestConnectionMenuItem" Header="_Tester Connexion" Click="TestConnectionMenuItem_Click"/>
+                </MenuItem>
+                <MenuItem Header="_Aide">
+                    <MenuItem Name="AboutMenuItem" Header="_À propos" Click="AboutMenuItem_Click"/>
+                </MenuItem>
+            </Menu>
+            
+            <ToolBar DockPanel.Dock="Top">
+                <Button Name="RefreshButton" Content="🔄 Actualiser" Click="RefreshButton_Click"/>
+                <Separator/>
+                <Button Name="TestConnectionButton" Content="🔗 Test API" Click="TestConnectionButton_Click"/>
+                <Separator/>
+                <TextBlock Text="URL API:"/>
+                <TextBox Name="ApiUrlTextBox" Width="300" Text="http://localhost:8000"/>
+            </ToolBar>
+        </DockPanel>
+        
+        <!-- Zone principale -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>  <!-- Panneau gauche -->
+                <ColumnDefinition Width="5"/>    <!-- Splitter -->
+                <ColumnDefinition Width="*"/>    <!-- Zone principale -->
+            </Grid.ColumnDefinitions>
+            
+            <!-- Panneau gauche - Navigation -->
+            <Border Grid.Column="0" Background="#F5F5F5" BorderBrush="#DDD" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <TextBlock Text="Repositories" FontWeight="Bold" DockPanel.Dock="Top" 
+                              Background="#E0E0E0" Padding="10,5"/>
+                    <TreeView Name="RepositoriesTreeView" DockPanel.Dock="Fill"
+                             SelectedItemChanged="RepositoriesTreeView_SelectedItemChanged"/>
+                </DockPanel>
+            </Border>
+            
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#DDD"/>
+            
+            <!-- Zone principale -->
+            <Border Grid.Column="2" Background="White">
+                <DockPanel>
+                    <!-- En-tête zone principale -->
+                    <Border DockPanel.Dock="Top" Background="#F0F0F0" BorderBrush="#DDD" BorderThickness="0,0,0,1">
+                        <TextBlock Name="MainContentHeader" Text="Bienvenue dans TextLab Client" 
+                                  FontSize="16" FontWeight="Bold" Padding="15,10"/>
+                    </Border>
+                    
+                    <!-- Contenu principal -->
+                    <ScrollViewer DockPanel.Dock="Fill" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Name="MainContentPanel" Margin="20">
+                            <!-- Zone de connexion -->
+                            <GroupBox Header="État de la Connexion" Margin="0,0,0,20">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                        <TextBlock Text="Statut:" FontWeight="Bold" Width="80"/>
+                                        <TextBlock Name="ConnectionStatusText" Text="Non testé" Foreground="Gray"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                        <TextBlock Text="API URL:" FontWeight="Bold" Width="80"/>
+                                        <TextBlock Name="CurrentApiUrlText" Text="-"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Version:" FontWeight="Bold" Width="80"/>
+                                        <TextBlock Name="ApiVersionText" Text="-"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </GroupBox>
+                            
+                            <!-- Instructions -->
+                            <GroupBox Header="Instructions de Démarrage">
+                                <StackPanel>
+                                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,10">
+                                        <Run Text="1. Vérifiez que l'API TextLab est démarrée"/>
+                                        <LineBreak/>
+                                        <Run Text="2. Configurez l'URL de l'API dans la barre d'outils"/>
+                                        <LineBreak/>
+                                        <Run Text="3. Cliquez sur 'Test API' pour vérifier la connexion"/>
+                                        <LineBreak/>
+                                        <Run Text="4. Une fois connecté, les repositories apparaîtront dans le panneau de gauche"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+        
+        <!-- Status bar -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock Name="StatusText" Text="Prêt"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Name="LastUpdateText" Text=""/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window> 
