@@ -42,19 +42,56 @@ namespace TextLabClient.Models
 
     public class DocumentVersions
     {
+        [JsonProperty("document_id")]
         public string DocumentId { get; set; } = string.Empty;
+        
+        [JsonProperty("document_title")]
+        public string DocumentTitle { get; set; } = string.Empty;
+        
+        [JsonProperty("git_path")]
+        public string GitPath { get; set; } = string.Empty;
+        
+        [JsonProperty("total_versions")]
         public int TotalVersions { get; set; }
+        
+        [JsonProperty("versions")]
         public List<DocumentVersion> Versions { get; set; } = new List<DocumentVersion>();
     }
 
     public class DocumentVersion
     {
+        [JsonProperty("version")]
         public string Version { get; set; } = string.Empty;
+        
+        [JsonProperty("commit_sha")]
         public string CommitSha { get; set; } = string.Empty;
+        
+        [JsonProperty("commit_sha_short")]
+        public string CommitShaShort { get; set; } = string.Empty;
+        
+        [JsonProperty("author")]
         public string Author { get; set; } = string.Empty;
+        
+        [JsonProperty("author_email")]
+        public string AuthorEmail { get; set; } = string.Empty;
+        
+        [JsonProperty("date")]
         public DateTime Date { get; set; }
+        
+        [JsonProperty("message")]
         public string Message { get; set; } = string.Empty;
+        
+        [JsonProperty("changes_count")]
         public int ChangesCount { get; set; }
+        
+        [JsonProperty("additions")]
+        public int Additions { get; set; }
+        
+        [JsonProperty("deletions")]
+        public int Deletions { get; set; }
+        
+        [JsonProperty("is_current")]
+        public bool IsCurrent { get; set; }
     }
 
     public class HealthInfo
