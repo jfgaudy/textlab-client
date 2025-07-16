@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -67,7 +68,7 @@ namespace TextLabClient.Services
                     // D'après la documentation, l'API retourne directement une liste de repositories
                     try
                     {
-                        var repositories = JsonConvert.DeserializeObject<List<Repository>>(content);
+                    var repositories = JsonConvert.DeserializeObject<List<Repository>>(content);
                         if (repositories != null)
                         {
                             System.Diagnostics.Debug.WriteLine($"Repositories trouvés via Liste directe: {repositories.Count}");
@@ -127,6 +128,20 @@ namespace TextLabClient.Services
                         if (documentResponse?.Documents != null)
                         {
                             System.Diagnostics.Debug.WriteLine($"Documents trouvés: {documentResponse.Documents.Count}");
+                            
+                            // Debug des premiers documents pour voir les champs
+                            foreach (var doc in documentResponse.Documents.Take(2))
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Document {doc.Title}:");
+                                System.Diagnostics.Debug.WriteLine($"  FileSizeBytes={doc.FileSizeBytes}");
+                                System.Diagnostics.Debug.WriteLine($"  RepositoryName='{doc.RepositoryName}'");
+                                System.Diagnostics.Debug.WriteLine($"  GitPath='{doc.GitPath}'");
+                                System.Diagnostics.Debug.WriteLine($"  CurrentCommitSha='{doc.CurrentCommitSha}'");
+                                
+                                // Afficher aussi dans la console pour debug
+                                Console.WriteLine($"DEBUG: Document {doc.Title} - Taille: {doc.FileSizeBytes} octets");
+                            }
+                            
                             return documentResponse.Documents;
                         }
                     }
@@ -193,7 +208,7 @@ namespace TextLabClient.Services
             {
                 var json = JsonConvert.SerializeObject(document);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                
+
                 var response = await _httpClient.PutAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}", content);
                 
                 if (response.IsSuccessStatusCode)
@@ -219,7 +234,7 @@ namespace TextLabClient.Services
             {
                 var json = JsonConvert.SerializeObject(document);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                
+
                 var response = await _httpClient.PostAsync($"{_baseUrl}/repositories/{repositoryId}/documents", content);
                 
                 if (response.IsSuccessStatusCode)
@@ -291,20 +306,46 @@ namespace TextLabClient.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"Contenu document {documentId}: {content.Length} caractères");
+                    System.Diagnostics.Debug.WriteLine($"✅ Contenu document {documentId}: {content.Length} caractères");
                     
                     var documentContent = JsonConvert.DeserializeObject<DocumentContent>(content);
                     return documentContent;
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Erreur récupération contenu: {response.StatusCode}");
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération contenu: {response.StatusCode} - {response.ReasonPhrase}");
+                    
+                    // Tentative avec l'endpoint /raw en fallback
+                    try
+                    {
+                        var rawResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/raw");
+                        if (rawResponse.IsSuccessStatusCode)
+                        {
+                            var rawContent = await rawResponse.Content.ReadAsStringAsync();
+                            var rawData = JsonConvert.DeserializeObject<dynamic>(rawContent);
+                            
+                            return new DocumentContent
+                            {
+                                Content = rawData?.raw_content?.ToString() ?? "Contenu non disponible",
+                                GitPath = "Chemin non disponible",
+                                Version = "Version non disponible",
+                                LastModified = DateTime.Now,
+                                RepositoryName = "Repository non disponible",
+                                FileSizeBytes = rawData?.size_bytes ?? 0
+                            };
+                        }
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"❌ Fallback /raw aussi échoué: {fallbackEx.Message}");
+                    }
+                    
                     return null;
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentContentAsync: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"❌ Exception GetDocumentContentAsync: {ex.Message}");
                 return null;
             }
         }
@@ -318,22 +359,94 @@ namespace TextLabClient.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"Versions document {documentId}: {content}");
+                    System.Diagnostics.Debug.WriteLine($"✅ Versions document {documentId}: {content.Length} caractères");
                     
                     var versions = JsonConvert.DeserializeObject<DocumentVersions>(content);
                     return versions;
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Erreur récupération versions: {response.StatusCode}");
-                    return null;
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération versions: {response.StatusCode} - {response.ReasonPhrase}");
+                    
+                    // Retourner une version vide plutôt que null pour éviter les erreurs UI
+                    return new DocumentVersions
+                    {
+                        DocumentId = documentId,
+                        TotalVersions = 0,
+                        Versions = new List<DocumentVersion>()
+                    };
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentVersionsAsync: {ex.Message}");
-                return null;
+                System.Diagnostics.Debug.WriteLine($"❌ Exception GetDocumentVersionsAsync: {ex.Message}");
+                
+                // Retourner une version vide plutôt que null
+                return new DocumentVersions
+                {
+                    DocumentId = documentId,
+                    TotalVersions = 0,
+                    Versions = new List<DocumentVersion>()
+                };
             }
+        }
+
+        // Méthode de test pour diagnostiquer les problèmes d'endpoints
+        public async Task<string> TestEndpointsAsync(string documentId)
+        {
+            var results = new StringBuilder();
+            results.AppendLine($"🔍 Test des endpoints pour le document: {documentId}");
+            results.AppendLine();
+            
+            // Test endpoint /content
+            try
+            {
+                var contentResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content");
+                results.AppendLine($"📄 GET /content → {contentResponse.StatusCode} {contentResponse.ReasonPhrase}");
+                if (!contentResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await contentResponse.Content.ReadAsStringAsync();
+                    results.AppendLine($"   Erreur: {errorContent.Substring(0, Math.Min(100, errorContent.Length))}...");
+                }
+            }
+            catch (Exception ex)
+            {
+                results.AppendLine($"❌ GET /content → Exception: {ex.Message}");
+            }
+            
+            // Test endpoint /versions
+            try
+            {
+                var versionsResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions");
+                results.AppendLine($"📚 GET /versions → {versionsResponse.StatusCode} {versionsResponse.ReasonPhrase}");
+                if (!versionsResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await versionsResponse.Content.ReadAsStringAsync();
+                    results.AppendLine($"   Erreur: {errorContent.Substring(0, Math.Min(100, errorContent.Length))}...");
+                }
+            }
+            catch (Exception ex)
+            {
+                results.AppendLine($"❌ GET /versions → Exception: {ex.Message}");
+            }
+            
+            // Test endpoint /raw
+            try
+            {
+                var rawResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/raw");
+                results.AppendLine($"📝 GET /raw → {rawResponse.StatusCode} {rawResponse.ReasonPhrase}");
+                if (!rawResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await rawResponse.Content.ReadAsStringAsync();
+                    results.AppendLine($"   Erreur: {errorContent.Substring(0, Math.Min(100, errorContent.Length))}...");
+                }
+            }
+            catch (Exception ex)
+            {
+                results.AppendLine($"❌ GET /raw → Exception: {ex.Message}");
+            }
+            
+            return results.ToString();
         }
 
         public void Dispose()

@@ -37,10 +37,29 @@ namespace TextLabClient
             // Métadonnées
             DocumentIdText.Text = _document.Id;
             DocumentTitleDetailText.Text = _document.Title ?? "Sans titre";
-            DocumentCategoryText.Text = _document.Category ?? "Non catégorisé";
-            DocumentRepositoryText.Text = _document.RepositoryId;
+            DocumentCategoryText.Text = !string.IsNullOrEmpty(_document.CategoryDisplay) 
+                ? _document.CategoryDisplay 
+                : (_document.Category ?? "Non catégorisé");
+            DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
+                ? _document.RepositoryName 
+                : _document.RepositoryId;
             DocumentGitPathText.Text = _document.GitPath ?? "";
-            DocumentVersionText.Text = _document.Version ?? "N/A";
+            DocumentVersionText.Text = !string.IsNullOrEmpty(_document.CurrentCommitSha) 
+                ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length))
+                : (_document.Version ?? "N/A");
+            // Debug complet de l'objet document
+            Console.WriteLine($"=== DEBUG DOCUMENT ===");
+            Console.WriteLine($"ID: {_document.Id}");
+            Console.WriteLine($"Title: {_document.Title}");
+            Console.WriteLine($"FileSizeBytes: {_document.FileSizeBytes} (type: {_document.FileSizeBytes.GetType()})");
+            Console.WriteLine($"RepositoryName: '{_document.RepositoryName}'");
+            Console.WriteLine($"GitPath: '{_document.GitPath}'");
+            Console.WriteLine($"CurrentCommitSha: '{_document.CurrentCommitSha}'");
+            Console.WriteLine($"==================");
+            
+            DocumentSizeText.Text = _document.FileSizeBytes > 0 
+                ? $"{_document.FileSizeBytes:N0} octets" 
+                : $"Taille inconnue (valeur: {_document.FileSizeBytes})";
             DocumentCreatedText.Text = _document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss");
             DocumentUpdatedText.Text = _document.UpdatedAt.ToString("dd/MM/yyyy HH:mm:ss");
             
@@ -83,8 +102,21 @@ namespace TextLabClient
                     DocumentContentTextBox.Text = _documentContent.Content;
                     ContentSizeText.Text = $"{_documentContent.FileSizeBytes} octets";
                     
-                    // Mettre à jour les informations de fichier
-                    DocumentSizeText.Text = $"{_documentContent.FileSizeBytes:N0} octets";
+                    // Mettre à jour les informations de fichier SEULEMENT si meilleures que celles existantes
+                    Console.WriteLine($"LoadDocumentContent: _documentContent.FileSizeBytes = {_documentContent.FileSizeBytes}");
+                    Console.WriteLine($"LoadDocumentContent: _document.FileSizeBytes = {_document.FileSizeBytes}");
+                    
+                    if (_documentContent.FileSizeBytes > 0 && _document.FileSizeBytes <= 0)
+                    {
+                        Console.WriteLine("Mise à jour de la taille depuis _documentContent");
+                        DocumentSizeText.Text = $"{_documentContent.FileSizeBytes:N0} octets";
+                    }
+                    else
+                    {
+                        Console.WriteLine("Conservation de la taille depuis _document (pas d'écrasement)");
+                    }
+                    // Ne pas écraser la taille si elle était déjà correcte dans _document
+                    
                     if (!string.IsNullOrEmpty(_documentContent.RepositoryName))
                     {
                         DocumentRepositoryText.Text = _documentContent.RepositoryName;
@@ -93,28 +125,39 @@ namespace TextLabClient
                 else
                 {
                     // Afficher un message informatif avec les données disponibles
-                    DocumentContentTextBox.Text = $@"📋 INFORMATIONS DU DOCUMENT
+                    var contentInfo = $@"📋 INFORMATIONS DU DOCUMENT
 
 🔸 ID: {_document.Id}
 🔸 Titre: {_document.Title ?? "Sans titre"}
-🔸 Catégorie: {_document.Category ?? "Non catégorisé"}
+🔸 Repository: {_document.RepositoryName ?? _document.RepositoryId}
+🔸 Catégorie: {(!string.IsNullOrEmpty(_document.CategoryDisplay) ? _document.CategoryDisplay : _document.Category) ?? "Non catégorisé"}
 🔸 Chemin Git: {_document.GitPath ?? "Non spécifié"}
-🔸 Version: {_document.Version ?? "N/A"}
+🔸 Taille: {(_document.FileSizeBytes > 0 ? $"{_document.FileSizeBytes:N0} octets" : "Inconnue")}
+🔸 Version: {(!string.IsNullOrEmpty(_document.CurrentCommitSha) ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length)) : _document.Version ?? "N/A")}
 🔸 Créé le: {_document.CreatedAt:dd/MM/yyyy HH:mm:ss}
 🔸 Modifié le: {_document.UpdatedAt:dd/MM/yyyy HH:mm:ss}
-🔸 Repository ID: {_document.RepositoryId}
+🔸 Créé par: {_document.CreatedBy ?? "Non spécifié"}
+🔸 Visibilité: {(!string.IsNullOrEmpty(_document.VisibilityDisplay) ? _document.VisibilityDisplay : _document.Visibility) ?? "Non spécifiée"}
+🔸 Actif: {(_document.IsActive ? "Oui" : "Non")}";
 
-⚠️  CONTENU NON DISPONIBLE
+                    // Ajouter l'aperçu du contenu s'il est disponible
+                    if (!string.IsNullOrEmpty(_document.ContentPreview))
+                    {
+                        contentInfo += $@"
+
+📄 APERÇU DU CONTENU
+{_document.ContentPreview}";
+                    }
+
+                    contentInfo += @"
+
+⚠️  CONTENU COMPLET NON DISPONIBLE
 L'API ne fournit pas encore l'endpoint pour récupérer le contenu complet des documents.
 Les endpoints /content et /versions retournent actuellement des erreurs 404.
 
-📧 Contactez l'administrateur de l'API pour activer ces fonctionnalités.
+📧 Contactez l'administrateur de l'API pour activer ces fonctionnalités.";
 
-🔗 Endpoints testés:
-   • GET /api/v1/documents/{_document.Id}/content → 404 Not Found
-   • GET /api/v1/documents/{_document.Id}/versions → 404 Not Found
-
-💡 Les métadonnées ci-dessus proviennent de la liste des documents qui fonctionne correctement.";
+                    DocumentContentTextBox.Text = contentInfo;
                     ContentSizeText.Text = "Contenu indisponible";
                 }
             }
@@ -199,11 +242,26 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.
         {
             try
             {
-                // Construire l'URL GitHub basée sur les informations disponibles
-                if (_documentContent != null && !string.IsNullOrEmpty(_documentContent.GitPath))
+                // Construire l'URL GitHub basée sur les informations du document
+                if (!string.IsNullOrEmpty(_document.GitPath) && !string.IsNullOrEmpty(_document.RepositoryName))
                 {
-                    // Exemple d'URL GitHub - à adapter selon vos repositories
-                    var githubUrl = $"https://github.com/jfgaudy/gaudylab/blob/main/{_documentContent.GitPath}";
+                    // Construire l'URL GitHub selon le repository
+                    var githubUrl = "";
+                    
+                    if (_document.RepositoryName.ToLower() == "gaudylab")
+                    {
+                        githubUrl = $"https://github.com/jfgaudy/gaudylab/blob/main/{_document.GitPath}";
+                    }
+                    else if (_document.RepositoryName.ToLower().Contains("pac"))
+                    {
+                        // Adapter selon le repository PAC_Repo
+                        githubUrl = $"https://github.com/jfgaudy/PAC_Repo/blob/main/{_document.GitPath}";
+                    }
+                    else
+                    {
+                        // Repository générique
+                        githubUrl = $"https://github.com/jfgaudy/{_document.RepositoryName}/blob/main/{_document.GitPath}";
+                    }
                     
                     Process.Start(new ProcessStartInfo
                     {
@@ -211,12 +269,12 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.
                         UseShellExecute = true
                     });
                     
-                    SetStatus("Ouverture dans le navigateur...");
+                    SetStatus($"Ouverture GitHub: {_document.RepositoryName}/{_document.GitPath}");
                 }
                 else
                 {
-                    SetStatus("URL GitHub non disponible");
-                    MessageBox.Show("Impossible de déterminer l'URL GitHub pour ce document.", 
+                    SetStatus("Informations GitHub incomplètes");
+                    MessageBox.Show($"Impossible de construire l'URL GitHub.\n\nRepository: {_document.RepositoryName ?? "Non spécifié"}\nChemin Git: {_document.GitPath ?? "Non spécifié"}", 
                                   "Information", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }

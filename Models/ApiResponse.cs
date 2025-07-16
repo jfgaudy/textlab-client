@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System;
+using Newtonsoft.Json;
 
 namespace TextLabClient.Models
 {
@@ -13,10 +14,19 @@ namespace TextLabClient.Models
 
     public class DocumentsResponse
     {
+        [JsonProperty("documents")]
         public List<Document> Documents { get; set; } = new List<Document>();
+        
+        [JsonProperty("total")]
         public int Total { get; set; }
+        
+        [JsonProperty("page")]
         public int Page { get; set; }
+        
+        [JsonProperty("size")]
         public int Size { get; set; }
+        
+        [JsonProperty("pages")]
         public int Pages { get; set; }
     }
 
