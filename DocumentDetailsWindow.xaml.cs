@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,12 +15,38 @@ namespace TextLabClient
         private readonly Document _document;
         private DocumentContent? _documentContent;
         private DocumentVersions? _documentVersions;
+        
+        // Nouveaux champs pour la gestion des versions spécifiques
+        private readonly DocumentVersion? _specificVersion;
+        private readonly string? _specificVersionSha;
+        private readonly bool _isViewingSpecificVersion;
 
+        // Constructeur original pour la version actuelle
         public DocumentDetailsWindow(Document document, TextLabApiService apiService)
         {
             InitializeComponent();
             _document = document;
             _apiService = apiService;
+            _specificVersion = null;
+            _specificVersionSha = null;
+            _isViewingSpecificVersion = false;
+            
+            // Initialiser l'affichage avec les informations de base
+            InitializeDocumentInfo();
+            
+            // Charger les détails complets
+            _ = LoadDocumentDetailsAsync();
+        }
+
+        // Nouveau constructeur pour une version spécifique
+        public DocumentDetailsWindow(Document document, TextLabApiService apiService, DocumentVersion specificVersion, string versionSha)
+        {
+            InitializeComponent();
+            _document = document;
+            _apiService = apiService;
+            _specificVersion = specificVersion;
+            _specificVersionSha = versionSha;
+            _isViewingSpecificVersion = true;
             
             // Initialiser l'affichage avec les informations de base
             InitializeDocumentInfo();
@@ -31,37 +58,77 @@ namespace TextLabClient
         private void InitializeDocumentInfo()
         {
             // Informations de base depuis le document fourni
-            DocumentTitleText.Text = _document.Title ?? "Document sans titre";
-            DocumentPathText.Text = _document.GitPath ?? "";
-            
-            // Métadonnées
-            DocumentIdText.Text = _document.Id;
-            DocumentTitleDetailText.Text = _document.Title ?? "Sans titre";
-            DocumentCategoryText.Text = !string.IsNullOrEmpty(_document.CategoryDisplay) 
-                ? _document.CategoryDisplay 
-                : (_document.Category ?? "Non catégorisé");
-            DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
-                ? _document.RepositoryName 
-                : _document.RepositoryId;
-            DocumentGitPathText.Text = _document.GitPath ?? "";
-            DocumentVersionText.Text = !string.IsNullOrEmpty(_document.CurrentCommitSha) 
-                ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length))
-                : (_document.Version ?? "N/A");
-            // Debug complet de l'objet document
-            Console.WriteLine($"=== DEBUG DOCUMENT ===");
-            Console.WriteLine($"ID: {_document.Id}");
-            Console.WriteLine($"Title: {_document.Title}");
-            Console.WriteLine($"FileSizeBytes: {_document.FileSizeBytes} (type: {_document.FileSizeBytes.GetType()})");
-            Console.WriteLine($"RepositoryName: '{_document.RepositoryName}'");
-            Console.WriteLine($"GitPath: '{_document.GitPath}'");
-            Console.WriteLine($"CurrentCommitSha: '{_document.CurrentCommitSha}'");
-            Console.WriteLine($"==================");
+            if (_isViewingSpecificVersion && _specificVersion != null)
+            {
+                // Affichage pour une version spécifique
+                DocumentTitleText.Text = $"{_document.Title ?? "Document sans titre"} [{_specificVersion.Version}]";
+                DocumentPathText.Text = _document.GitPath ?? "";
+                
+                // Métadonnées avec informations de version
+                DocumentIdText.Text = _document.Id;
+                DocumentTitleDetailText.Text = $"{_document.Title ?? "Sans titre"} (Version {_specificVersion.Version})";
+                DocumentCategoryText.Text = !string.IsNullOrEmpty(_document.CategoryDisplay) 
+                    ? _document.CategoryDisplay 
+                    : (_document.Category ?? "Non catégorisé");
+                DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
+                    ? _document.RepositoryName 
+                    : _document.RepositoryId;
+                DocumentGitPathText.Text = _document.GitPath ?? "";
+                
+                // Informations de la version spécifique
+                DocumentVersionText.Text = !string.IsNullOrEmpty(_specificVersion.CommitSha) 
+                    ? _specificVersion.CommitSha.Substring(0, Math.Min(8, _specificVersion.CommitSha.Length))
+                    : _specificVersion.Version;
+                    
+                DocumentUpdatedText.Text = _specificVersion.Date.ToString("dd/MM/yyyy HH:mm:ss");
+                
+                // Titre de fenêtre avec indication de version
+                this.Title = $"Détails du Document - {_document.Title} [{_specificVersion.Version}]";
+                
+                Console.WriteLine($"=== DEBUG VERSION SPÉCIFIQUE ===");
+                Console.WriteLine($"Document: {_document.Title}");
+                Console.WriteLine($"Version: {_specificVersion.Version}");
+                Console.WriteLine($"SHA: {_specificVersion.CommitSha}");
+                Console.WriteLine($"Auteur: {_specificVersion.Author}");
+                Console.WriteLine($"Date: {_specificVersion.Date}");
+                Console.WriteLine($"================================");
+            }
+            else
+            {
+                // Affichage normal pour la version actuelle
+                DocumentTitleText.Text = _document.Title ?? "Document sans titre";
+                DocumentPathText.Text = _document.GitPath ?? "";
+                
+                // Métadonnées
+                DocumentIdText.Text = _document.Id;
+                DocumentTitleDetailText.Text = _document.Title ?? "Sans titre";
+                DocumentCategoryText.Text = !string.IsNullOrEmpty(_document.CategoryDisplay) 
+                    ? _document.CategoryDisplay 
+                    : (_document.Category ?? "Non catégorisé");
+                DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
+                    ? _document.RepositoryName 
+                    : _document.RepositoryId;
+                DocumentGitPathText.Text = _document.GitPath ?? "";
+                DocumentVersionText.Text = !string.IsNullOrEmpty(_document.CurrentCommitSha) 
+                    ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length))
+                    : (_document.Version ?? "N/A");
+                
+                DocumentUpdatedText.Text = _document.UpdatedAt.ToString("dd/MM/yyyy HH:mm:ss");
+                
+                // Debug complet de l'objet document
+                Console.WriteLine($"=== DEBUG DOCUMENT ===");
+                Console.WriteLine($"ID: {_document.Id}");
+                Console.WriteLine($"Title: {_document.Title}");
+                Console.WriteLine($"FileSizeBytes: {_document.FileSizeBytes} (type: {_document.FileSizeBytes.GetType()})");
+                Console.WriteLine($"RepositoryName: '{_document.RepositoryName}'");
+                Console.WriteLine($"GitPath: '{_document.GitPath}'");
+                Console.WriteLine($"CurrentCommitSha: '{_document.CurrentCommitSha}'");
+                Console.WriteLine($"==================");
+            }
             
             DocumentSizeText.Text = _document.FileSizeBytes > 0 
                 ? $"{_document.FileSizeBytes:N0} octets" 
                 : $"Taille inconnue (valeur: {_document.FileSizeBytes})";
-            DocumentCreatedText.Text = _document.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss");
-            DocumentUpdatedText.Text = _document.UpdatedAt.ToString("dd/MM/yyyy HH:mm:ss");
             
             SetStatus("Chargement des détails...");
         }
@@ -94,7 +161,15 @@ namespace TextLabClient
             {
                 SetStatus("Chargement du contenu...");
                 
-                _documentContent = await _apiService.GetDocumentContentAsync(_document.Id);
+                // Choisir la méthode de chargement selon le contexte
+                if (_isViewingSpecificVersion && !string.IsNullOrEmpty(_specificVersionSha))
+                {
+                    _documentContent = await _apiService.GetDocumentContentVersionAsync(_document.Id, _specificVersionSha);
+                }
+                else
+                {
+                    _documentContent = await _apiService.GetDocumentContentAsync(_document.Id);
+                }
                 
                 if (_documentContent != null)
                 {
@@ -132,8 +207,26 @@ namespace TextLabClient
 🔸 Repository: {_document.RepositoryName ?? _document.RepositoryId}
 🔸 Catégorie: {(!string.IsNullOrEmpty(_document.CategoryDisplay) ? _document.CategoryDisplay : _document.Category) ?? "Non catégorisé"}
 🔸 Chemin Git: {_document.GitPath ?? "Non spécifié"}
-🔸 Taille: {(_document.FileSizeBytes > 0 ? $"{_document.FileSizeBytes:N0} octets" : "Inconnue")}
-🔸 Version: {(!string.IsNullOrEmpty(_document.CurrentCommitSha) ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length)) : _document.Version ?? "N/A")}
+🔸 Taille: {(_document.FileSizeBytes > 0 ? $"{_document.FileSizeBytes:N0} octets" : "Inconnue")}";
+
+                    if (_isViewingSpecificVersion && _specificVersion != null)
+                    {
+                        contentInfo += $@"
+
+🔸 VERSION SPÉCIFIQUE: {_specificVersion.Version}
+🔸 SHA: {_specificVersion.CommitSha}
+🔸 Auteur: {_specificVersion.Author}
+🔸 Date: {_specificVersion.Date:dd/MM/yyyy HH:mm:ss}
+🔸 Message: {_specificVersion.Message}
+🔸 Changements: {_specificVersion.ChangesCount}";
+                    }
+                    else
+                    {
+                        contentInfo += $@"
+🔸 Version: {(!string.IsNullOrEmpty(_document.CurrentCommitSha) ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length)) : _document.Version ?? "N/A")}";
+                    }
+
+                    contentInfo += $@"
 🔸 Créé le: {_document.CreatedAt:dd/MM/yyyy HH:mm:ss}
 🔸 Modifié le: {_document.UpdatedAt:dd/MM/yyyy HH:mm:ss}
 🔸 Créé par: {_document.CreatedBy ?? "Non spécifié"}
@@ -149,11 +242,24 @@ namespace TextLabClient
 {_document.ContentPreview}";
                     }
 
-                    contentInfo += @"
+                    if (_isViewingSpecificVersion)
+                    {
+                        contentInfo += @"
+
+⚠️  CONTENU DE VERSION NON DISPONIBLE
+L'API ne fournit pas encore l'endpoint pour récupérer le contenu des versions spécifiques.
+Vous visualisez les métadonnées de cette version.";
+                    }
+                    else
+                    {
+                        contentInfo += @"
 
 ⚠️  CONTENU COMPLET NON DISPONIBLE
 L'API ne fournit pas encore l'endpoint pour récupérer le contenu complet des documents.
-Les endpoints /content et /versions retournent actuellement des erreurs 404.
+Les endpoints /content et /versions retournent actuellement des erreurs 404.";
+                    }
+
+                    contentInfo += @"
 
 📧 Contactez l'administrateur de l'API pour activer ces fonctionnalités.";
 

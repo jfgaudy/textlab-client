@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -350,7 +351,61 @@ namespace TextLabClient.Services
             }
         }
 
-        public async Task<DocumentVersions?> GetDocumentVersionsAsync(string documentId)
+        // Nouvelle méthode pour récupérer le contenu d'une version spécifique
+        public async Task<DocumentContent?> GetDocumentContentVersionAsync(string documentId, string versionSha)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content?version={versionSha}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    System.Diagnostics.Debug.WriteLine($"✅ Contenu version {versionSha} du document {documentId}: {content.Length} caractères");
+                    
+                    var documentContent = JsonConvert.DeserializeObject<DocumentContent>(content);
+                    return documentContent;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération contenu version: {response.StatusCode} - {response.ReasonPhrase}");
+                    
+                    // Fallback avec l'endpoint /versions/{sha}/content
+                    try
+                    {
+                        var versionResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions/{versionSha}/content");
+                        if (versionResponse.IsSuccessStatusCode)
+                        {
+                            var versionContent = await versionResponse.Content.ReadAsStringAsync();
+                            var versionData = JsonConvert.DeserializeObject<dynamic>(versionContent);
+                            
+                            return new DocumentContent
+                            {
+                                Content = versionData?.content?.ToString() ?? "Contenu de version non disponible",
+                                GitPath = versionData?.document_metadata?.git_path?.ToString() ?? "Chemin non disponible",
+                                Version = versionSha,
+                                LastModified = DateTime.TryParse(versionData?.version_info?.date?.ToString(), out DateTime date) ? date : DateTime.Now,
+                                RepositoryName = versionData?.document_metadata?.repository_name?.ToString() ?? "Repository non disponible",
+                                FileSizeBytes = int.TryParse(versionData?.version_info?.file_size_bytes?.ToString(), out int size) ? size : 0
+                            };
+                        }
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"❌ Fallback /versions/{versionSha}/content aussi échoué: {fallbackEx.Message}");
+                    }
+                    
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Exception GetDocumentContentVersionAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<int> GetDocumentVersionsCountAsync(string documentId)
         {
             try
             {
@@ -359,14 +414,63 @@ namespace TextLabClient.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ Versions document {documentId}: {content.Length} caractères");
+                    var versions = JsonConvert.DeserializeObject<DocumentVersions>(content);
+                    return versions?.TotalVersions ?? 0;
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        public async Task<DocumentVersions?> GetDocumentVersionsAsync(string documentId)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 GetDocumentVersionsAsync appelé pour document: {documentId}");
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions");
+                
+                Console.WriteLine($"🌐 Réponse API: {response.StatusCode} - {response.ReasonPhrase}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"✅ Contenu reçu ({content.Length} caractères): {content.Substring(0, Math.Min(200, content.Length))}...");
                     
                     var versions = JsonConvert.DeserializeObject<DocumentVersions>(content);
+                    
+                    if (versions != null)
+                    {
+                        Console.WriteLine($"📊 Désérialisation réussie:");
+                        Console.WriteLine($"   - TotalVersions: {versions.TotalVersions}");
+                        Console.WriteLine($"   - Versions.Count: {versions.Versions.Count}");
+                        
+                        if (versions.Versions.Count > 0)
+                        {
+                            Console.WriteLine($"📋 Détail des versions:");
+                            foreach (var v in versions.Versions)
+                            {
+                                Console.WriteLine($"   - {v.Version}: {v.CommitSha} par {v.Author} le {v.Date}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ Désérialisation a retourné null");
+                    }
+                    
                     return versions;
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération versions: {response.StatusCode} - {response.ReasonPhrase}");
+                    Console.WriteLine($"❌ Erreur HTTP: {response.StatusCode} - {response.ReasonPhrase}");
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"   Contenu d'erreur: {errorContent}");
                     
                     // Retourner une version vide plutôt que null pour éviter les erreurs UI
                     return new DocumentVersions
@@ -379,7 +483,8 @@ namespace TextLabClient.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Exception GetDocumentVersionsAsync: {ex.Message}");
+                Console.WriteLine($"❌ Exception GetDocumentVersionsAsync: {ex.Message}");
+                Console.WriteLine($"   Stack trace: {ex.StackTrace}");
                 
                 // Retourner une version vide plutôt que null
                 return new DocumentVersions

@@ -1,4 +1,6 @@
+#nullable enable
 using System;
+using Newtonsoft.Json;
 
 namespace TextLabClient.Models
 {
