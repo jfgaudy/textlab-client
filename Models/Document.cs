@@ -27,7 +27,7 @@ namespace TextLabClient.Models
         public DateTime CreatedAt { get; set; }
         
         [JsonProperty("updated_at")]
-        public DateTime UpdatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
         
         // NOUVEAUX CHAMPS selon la documentation API
         [JsonProperty("repository_name")]

@@ -111,296 +111,194 @@ namespace TextLabClient.Services
             }
         }
 
-        public async Task<List<Document>?> GetDocumentsAsync(string repositoryId)
+        // ===== LECTURE DES DOCUMENTS =====
+
+        public async Task<List<Document>> GetDocumentsAsync(string? repositoryId = null)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/?repository_id={repositoryId}");
-                
-                if (response.IsSuccessStatusCode)
+                var url = $"{_baseUrl}/api/v1/documents/";
+                if (!string.IsNullOrEmpty(repositoryId))
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"Réponse documents pour repo {repositoryId}: {content}");
-                    
-                    // D'après la documentation, la réponse a cette structure avec pagination
-                    try
-                    {
-                        var documentResponse = JsonConvert.DeserializeObject<DocumentsResponse>(content);
-                        if (documentResponse?.Documents != null)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Documents trouvés: {documentResponse.Documents.Count}");
-                            
-                            // Debug des premiers documents pour voir les champs
-                            foreach (var doc in documentResponse.Documents.Take(2))
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Document {doc.Title}:");
-                                System.Diagnostics.Debug.WriteLine($"  FileSizeBytes={doc.FileSizeBytes}");
-                                System.Diagnostics.Debug.WriteLine($"  RepositoryName='{doc.RepositoryName}'");
-                                System.Diagnostics.Debug.WriteLine($"  GitPath='{doc.GitPath}'");
-                                System.Diagnostics.Debug.WriteLine($"  CurrentCommitSha='{doc.CurrentCommitSha}'");
-                                
-                                // Afficher aussi dans la console pour debug
-                                Console.WriteLine($"DEBUG: Document {doc.Title} - Taille: {doc.FileSizeBytes} octets");
-                            }
-                            
-                            return documentResponse.Documents;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation DocumentsResponse: {ex.Message}");
-                    }
-                    
-                    // Fallback : essayer avec ApiResponse
-                    try
-                    {
-                        var apiResponse = JsonConvert.DeserializeObject<ApiResponse<List<Document>>>(content);
-                        if (apiResponse?.Data != null)
-                        {
-                            return apiResponse.Data;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation ApiResponse: {ex.Message}");
-                    }
-                    
-                    return null;
+                    url += $"?repository_id={repositoryId}";
                 }
-                else
+
+                var response = await _httpClient.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 GetDocuments Response: {content}");
+
+                var apiResponse = JsonConvert.DeserializeObject<ApiResponse<DocumentListResponse>>(content);
+                if (apiResponse?.IsSuccess == true && apiResponse.Data?.Documents != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Erreur HTTP documents: {response.StatusCode} - {response.ReasonPhrase}");
-                    return null;
+                    return apiResponse.Data.Documents;
                 }
+
+                // Essayer la structure directe
+                var directResponse = JsonConvert.DeserializeObject<DocumentListResponse>(content);
+                if (directResponse?.Documents != null)
+                {
+                    return directResponse.Documents;
+                }
+
+                return new List<Document>();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentsAsync: {ex.Message}");
-                return null;
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentsAsync: {ex.Message}");
+                throw;
             }
         }
 
-        public async Task<Document?> GetDocumentAsync(string repositoryId, string documentId)
-        {
-            try
-            {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}");
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(content);
-                    return apiResponse?.Data;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-        public async Task<Document?> UpdateDocumentAsync(string repositoryId, string documentId, Document document)
-        {
-            try
-            {
-                var json = JsonConvert.SerializeObject(document);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PutAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}", content);
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(responseContent);
-                    return apiResponse?.Data;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-        public async Task<Document?> CreateDocumentAsync(string repositoryId, Document document)
-        {
-            try
-            {
-                var json = JsonConvert.SerializeObject(document);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PostAsync($"{_baseUrl}/repositories/{repositoryId}/documents", content);
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(responseContent);
-                    return apiResponse?.Data;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-        public async Task<bool> DeleteDocumentAsync(string repositoryId, string documentId)
-        {
-            try
-            {
-                var response = await _httpClient.DeleteAsync($"{_baseUrl}/repositories/{repositoryId}/documents/{documentId}");
-                
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        // Nouvelles méthodes pour la visualisation détaillée des documents
-        
-        public async Task<Document?> GetDocumentDetailsAsync(string documentId)
+        public async Task<Document?> GetDocumentAsync(string documentId)
         {
             try
             {
                 var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}");
-                
-                if (response.IsSuccessStatusCode)
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 GetDocument Response: {content}");
+
+                // Essayer d'abord avec ApiResponse wrapper
+                try
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"Détails document {documentId}: {content}");
-                    
-                    var document = JsonConvert.DeserializeObject<Document>(content);
-                    return document;
+                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(content);
+                    if (apiResponse?.IsSuccess == true && apiResponse.Data != null)
+                    {
+                        return apiResponse.Data;
+                    }
                 }
-                else
+                catch
                 {
-                    System.Diagnostics.Debug.WriteLine($"Erreur récupération détails: {response.StatusCode}");
-                    return null;
+                    // Si ça échoue, essayer directement
                 }
+
+                // Essayer la désérialisation directe
+                return JsonConvert.DeserializeObject<Document>(content);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Exception GetDocumentDetailsAsync: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentAsync: {ex.Message}");
                 return null;
             }
         }
 
-        public async Task<DocumentContent?> GetDocumentContentAsync(string documentId)
+        // SUPPRIMÉ: UpdateDocumentAsync - Endpoint non disponible dans l'API
+
+        public async Task<Document?> CreateDocumentAsync(string title, string content, string repositoryId, string? category = null, string? visibility = "private", string? createdBy = null)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content");
+                var document = new
+                {
+                    title = title,
+                    content = content,
+                    repository_id = repositoryId,
+                    category = category,
+                    visibility = visibility ?? "private",
+                    created_by = createdBy
+                };
+
+                var json = JsonConvert.SerializeObject(document);
+                var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/", httpContent);
                 
+                System.Diagnostics.Debug.WriteLine($"🚀 CreateDocument - URL: {_baseUrl}/api/v1/documents/");
+                System.Diagnostics.Debug.WriteLine($"🚀 CreateDocument - Status: {response.StatusCode}");
+                
+                var responseContent = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🚀 CreateDocument - Response: {responseContent}");
+
                 if (response.IsSuccessStatusCode)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ Contenu document {documentId}: {content.Length} caractères");
-                    
-                    var documentContent = JsonConvert.DeserializeObject<DocumentContent>(content);
-                    return documentContent;
+                    // Essayer d'abord avec ApiResponse wrapper
+                    try
+                    {
+                        var apiResponse = JsonConvert.DeserializeObject<ApiResponse<Document>>(responseContent);
+                        if (apiResponse?.IsSuccess == true && apiResponse.Data != null)
+                        {
+                            return apiResponse.Data;
+                        }
+                    }
+                    catch
+                    {
+                        // Si ça échoue, essayer directement
+                    }
+
+                    // Essayer la désérialisation directe
+                    return JsonConvert.DeserializeObject<Document>(responseContent);
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération contenu: {response.StatusCode} - {response.ReasonPhrase}");
-                    
-                    // Tentative avec l'endpoint /raw en fallback
-                    try
-                    {
-                        var rawResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/raw");
-                        if (rawResponse.IsSuccessStatusCode)
-                        {
-                            var rawContent = await rawResponse.Content.ReadAsStringAsync();
-                            var rawData = JsonConvert.DeserializeObject<dynamic>(rawContent);
-                            
-                            return new DocumentContent
-                            {
-                                Content = rawData?.raw_content?.ToString() ?? "Contenu non disponible",
-                                GitPath = "Chemin non disponible",
-                                Version = "Version non disponible",
-                                LastModified = DateTime.Now,
-                                RepositoryName = "Repository non disponible",
-                                FileSizeBytes = rawData?.size_bytes ?? 0
-                            };
-                        }
-                    }
-                    catch (Exception fallbackEx)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"❌ Fallback /raw aussi échoué: {fallbackEx.Message}");
-                    }
-                    
-                    return null;
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur HTTP {response.StatusCode}: {responseContent}");
+                    throw new HttpRequestException($"Erreur lors de la création du document: {response.StatusCode} - {responseContent}");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Exception GetDocumentContentAsync: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur CreateDocumentAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        // SUPPRIMÉ: DeleteDocumentAsync - Endpoint non disponible dans l'API
+
+        public async Task<Document?> GetDocumentWithContentAsync(string documentId, string? version = null)
+        {
+            try
+            {
+                var url = $"{_baseUrl}/api/v1/documents/{documentId}/content";
+                if (!string.IsNullOrEmpty(version))
+                {
+                    url += $"?version={version}";
+                }
+
+                var response = await _httpClient.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<Document>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentWithContentAsync: {ex.Message}");
                 return null;
             }
         }
 
-        // Nouvelle méthode pour récupérer le contenu d'une version spécifique
-        public async Task<DocumentContent?> GetDocumentContentVersionAsync(string documentId, string versionSha)
+        public async Task<string?> GetDocumentRawContentAsync(string documentId)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content?version={versionSha}");
-                
-                if (response.IsSuccessStatusCode)
+                var rawResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/raw");
+                rawResponse.EnsureSuccessStatusCode();
+
+                var rawContent = await rawResponse.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 GetDocumentRawContent Response: {rawContent}");
+
+                // Essayer de parser la réponse
+                try
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ Contenu version {versionSha} du document {documentId}: {content.Length} caractères");
-                    
-                    var documentContent = JsonConvert.DeserializeObject<DocumentContent>(content);
-                    return documentContent;
+                    var parsedResponse = JsonConvert.DeserializeObject<dynamic>(rawContent);
+                    if (parsedResponse?.content != null)
+                    {
+                        return parsedResponse.content.ToString();
+                    }
                 }
-                else
+                catch
                 {
-                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération contenu version: {response.StatusCode} - {response.ReasonPhrase}");
-                    
-                    // Fallback avec l'endpoint /versions/{sha}/content
-                    try
-                    {
-                        var versionResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions/{versionSha}/content");
-                        if (versionResponse.IsSuccessStatusCode)
-                        {
-                            var versionContent = await versionResponse.Content.ReadAsStringAsync();
-                            var versionData = JsonConvert.DeserializeObject<dynamic>(versionContent);
-                            
-                            return new DocumentContent
-                            {
-                                Content = versionData?.content?.ToString() ?? "Contenu de version non disponible",
-                                GitPath = versionData?.document_metadata?.git_path?.ToString() ?? "Chemin non disponible",
-                                Version = versionSha,
-                                LastModified = DateTime.TryParse(versionData?.version_info?.date?.ToString(), out DateTime date) ? date : DateTime.Now,
-                                RepositoryName = versionData?.document_metadata?.repository_name?.ToString() ?? "Repository non disponible",
-                                FileSizeBytes = int.TryParse(versionData?.version_info?.file_size_bytes?.ToString(), out int size) ? size : 0
-                            };
-                        }
-                    }
-                    catch (Exception fallbackEx)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"❌ Fallback /versions/{versionSha}/content aussi échoué: {fallbackEx.Message}");
-                    }
-                    
-                    return null;
+                    // Si le parsing JSON échoue, retourner le contenu brut
+                    return rawContent;
                 }
+
+                return rawContent;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Exception GetDocumentContentVersionAsync: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentRawContentAsync: {ex.Message}");
                 return null;
             }
         }
@@ -428,71 +326,126 @@ namespace TextLabClient.Services
             }
         }
 
-        public async Task<DocumentVersions?> GetDocumentVersionsAsync(string documentId)
+        // ===== CONTENU DES DOCUMENTS =====
+
+        public async Task<DocumentContent?> GetDocumentContentAsync(string documentId)
         {
             try
             {
-                Console.WriteLine($"🔍 GetDocumentVersionsAsync appelé pour document: {documentId}");
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions");
+                await LoggingService.LogDebugAsync($"🔍 GetDocumentContent appelé avec documentId: '{documentId}'");
+                await LoggingService.LogDebugAsync($"🔍 URL complète: {_baseUrl}/api/v1/documents/{documentId}/content");
                 
-                Console.WriteLine($"🌐 Réponse API: {response.StatusCode} - {response.ReasonPhrase}");
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content");
                 
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"✅ Contenu reçu ({content.Length} caractères): {content.Substring(0, Math.Min(200, content.Length))}...");
-                    
-                    var versions = JsonConvert.DeserializeObject<DocumentVersions>(content);
-                    
-                    if (versions != null)
-                    {
-                        Console.WriteLine($"📊 Désérialisation réussie:");
-                        Console.WriteLine($"   - TotalVersions: {versions.TotalVersions}");
-                        Console.WriteLine($"   - Versions.Count: {versions.Versions.Count}");
-                        
-                        if (versions.Versions.Count > 0)
-                        {
-                            Console.WriteLine($"📋 Détail des versions:");
-                            foreach (var v in versions.Versions)
-                            {
-                                Console.WriteLine($"   - {v.Version}: {v.CommitSha} par {v.Author} le {v.Date}");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"❌ Désérialisation a retourné null");
-                    }
-                    
-                    return versions;
-                }
-                else
-                {
-                    Console.WriteLine($"❌ Erreur HTTP: {response.StatusCode} - {response.ReasonPhrase}");
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"   Contenu d'erreur: {errorContent}");
-                    
-                    // Retourner une version vide plutôt que null pour éviter les erreurs UI
-                    return new DocumentVersions
-                    {
-                        DocumentId = documentId,
-                        TotalVersions = 0,
-                        Versions = new List<DocumentVersion>()
-                    };
-                }
+                await LoggingService.LogDebugAsync($"🔍 Réponse HTTP: {response.StatusCode} - {response.ReasonPhrase}");
+                
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                await LoggingService.LogDebugAsync($"🔍 GetDocumentContent Response: {content}");
+
+                // L'API retourne directement le contenu, pas dans un wrapper
+                var result = JsonConvert.DeserializeObject<DocumentContent>(content);
+                return result;
+            }
+            catch (HttpRequestException ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur HTTP GetDocumentContent: {ex.Message}");
+                return null;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Exception GetDocumentVersionsAsync: {ex.Message}");
-                Console.WriteLine($"   Stack trace: {ex.StackTrace}");
+                await LoggingService.LogErrorAsync($"❌ Erreur GetDocumentContent: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<DocumentContent?> GetDocumentContentVersionAsync(string documentId, string commitSha)
+        {
+            try
+            {
+                // Utiliser l'endpoint content avec le paramètre version
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content?version={commitSha}");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 GetDocumentContentVersion Response: {content}");
+
+                var result = JsonConvert.DeserializeObject<DocumentContent>(content);
+                return result;
+            }
+            catch (HttpRequestException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur HTTP GetDocumentContentVersion: {ex.Message}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentContentVersion: {ex.Message}");
+                return null;
+            }
+        }
+
+        // ===== VERSIONING ET HISTORIQUE =====
+
+        public async Task<DocumentVersions?> GetDocumentVersionsAsync(string documentId, int limit = 50)
+        {
+            try
+            {
+                await LoggingService.LogDebugAsync($"🔍 GetDocumentVersions appelé avec documentId: '{documentId}'");
+                await LoggingService.LogDebugAsync($"🔍 URL complète: {_baseUrl}/api/v1/documents/{documentId}/versions?limit={limit}");
                 
-                // Retourner une version vide plutôt que null
-                return new DocumentVersions
-                {
-                    DocumentId = documentId,
-                    TotalVersions = 0,
-                    Versions = new List<DocumentVersion>()
-                };
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions?limit={limit}");
+                
+                await LoggingService.LogDebugAsync($"🔍 Réponse HTTP: {response.StatusCode} - {response.ReasonPhrase}");
+                
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                await LoggingService.LogDebugAsync($"🔍 GetDocumentVersions Response: {content}");
+
+                // Désérialiser directement vers DocumentVersions
+                var documentVersions = JsonConvert.DeserializeObject<DocumentVersions>(content);
+                await LoggingService.LogDebugAsync($"✅ Désérialisation réussie: {documentVersions?.TotalVersions ?? 0} versions trouvées");
+                
+                return documentVersions;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetDocumentVersionsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        // ===== MÉTHODES DE DIAGNOSTIC ET SUPPORT =====
+
+        public async Task<string> GetDiagnosticsAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/diagnostics");
+                response.EnsureSuccessStatusCode();
+
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                return $"Erreur diagnostic: {ex.Message}";
+            }
+        }
+
+        public async Task<string> GetEnvironmentStatsAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/stats/environment");
+                response.EnsureSuccessStatusCode();
+
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                return $"Erreur stats environnement: {ex.Message}";
             }
         }
 

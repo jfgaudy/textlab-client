@@ -113,7 +113,7 @@ namespace TextLabClient
                     ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length))
                     : (_document.Version ?? "N/A");
                 
-                DocumentUpdatedText.Text = _document.UpdatedAt.ToString("dd/MM/yyyy HH:mm:ss");
+                DocumentUpdatedText.Text = _document.UpdatedAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? "Date inconnue";
                 
                 // Debug complet de l'objet document
                 Console.WriteLine($"=== DEBUG DOCUMENT ===");
@@ -164,11 +164,35 @@ namespace TextLabClient
                 // Choisir la méthode de chargement selon le contexte
                 if (_isViewingSpecificVersion && !string.IsNullOrEmpty(_specificVersionSha))
                 {
-                    _documentContent = await _apiService.GetDocumentContentVersionAsync(_document.Id, _specificVersionSha);
+                    var doc = await _apiService.GetDocumentWithContentAsync(_document.Id, _specificVersionSha);
+                    if (doc != null)
+                    {
+                        _documentContent = new DocumentContent
+                        {
+                            Content = doc.Content ?? "",
+                            GitPath = doc.GitPath ?? "",
+                            Version = _specificVersionSha,
+                            LastModified = doc.UpdatedAt ?? DateTime.Now,
+                            RepositoryName = doc.RepositoryName ?? "",
+                            FileSizeBytes = doc.FileSizeBytes
+                        };
+                    }
                 }
                 else
                 {
-                    _documentContent = await _apiService.GetDocumentContentAsync(_document.Id);
+                    var doc = await _apiService.GetDocumentWithContentAsync(_document.Id);
+                    if (doc != null)
+                    {
+                        _documentContent = new DocumentContent
+                        {
+                            Content = doc.Content ?? "",
+                            GitPath = doc.GitPath ?? "",
+                            Version = doc.CurrentCommitSha ?? "current",
+                            LastModified = doc.UpdatedAt ?? DateTime.Now,
+                            RepositoryName = doc.RepositoryName ?? "",
+                            FileSizeBytes = doc.FileSizeBytes
+                        };
+                    }
                 }
                 
                 if (_documentContent != null)

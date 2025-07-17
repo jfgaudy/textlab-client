@@ -3,8 +3,11 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using TextLabClient.Services;
 using TextLabClient.Models;
 
@@ -12,8 +15,8 @@ namespace TextLabClient
 {
     public partial class MainWindow : Window
     {
-        private readonly TextLabApiService _apiService;
-        private ObservableCollection<Repository> _repositories;
+        private readonly TextLabApiService _apiService = new TextLabApiService();
+        private ObservableCollection<Repository> _repositories = new ObservableCollection<Repository>();
         private Repository? _selectedRepository;
         private readonly string _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "textlab_debug.log");
 
@@ -22,8 +25,6 @@ namespace TextLabClient
             try
             {
                 InitializeComponent();
-                _apiService = new TextLabApiService();
-                _repositories = new ObservableCollection<Repository>();
                 
                 // Initialisation
                 LogDebug("Application démarrée - Initialisation");
@@ -31,6 +32,9 @@ namespace TextLabClient
                 LoadSettings();
                 SetStatus("Application démarrée");
                 RepositoriesListBox.ItemsSource = _repositories;
+                
+                // Test de référence des boutons
+                TestButtonReferences();
                 
                 // Attacher l'événement Expanded au TreeView
                 DocumentsTreeView.Loaded += DocumentsTreeView_Loaded;
@@ -40,6 +44,98 @@ namespace TextLabClient
                 LogDebug($"Erreur d'initialisation: {ex.Message}");
                 MessageBox.Show($"Erreur d'initialisation:\n{ex.Message}", 
                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void TestButtonReferences()
+        {
+            try
+            {
+                LogDebug("🔍 Test des références de boutons...");
+                
+                if (NewDocumentButton != null)
+                {
+                    LogDebug($"✅ NewDocumentButton trouvé - IsEnabled: {NewDocumentButton.IsEnabled}");
+                }
+                else
+                {
+                    LogDebug("❌ NewDocumentButton est NULL");
+                }
+
+                if (SyncRepositoryButton != null)
+                {
+                    LogDebug($"✅ SyncRepositoryButton trouvé - IsEnabled: {SyncRepositoryButton.IsEnabled}");
+                }
+                else
+                {
+                    LogDebug("❌ SyncRepositoryButton est NULL");
+                }
+
+                if (TestConnectionButton != null)
+                {
+                    LogDebug($"✅ TestConnectionButton trouvé - IsEnabled: {TestConnectionButton.IsEnabled}");
+                }
+                else
+                {
+                    LogDebug("❌ TestConnectionButton est NULL");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur lors du test des boutons: {ex.Message}");
+            }
+        }
+
+        private void EnableConnectionButtons(bool enabled)
+        {
+            try
+            {
+                LogDebug($"🔘 {(enabled ? "Activation" : "Désactivation")} des boutons de connexion...");
+
+                // Utiliser Dispatcher pour s'assurer qu'on est sur le thread UI
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        if (NewDocumentButton != null)
+                        {
+                            NewDocumentButton.IsEnabled = enabled;
+                            LogDebug($"✅ NewDocumentButton {(enabled ? "activé" : "désactivé")}");
+                        }
+                        else
+                        {
+                            LogDebug("❌ NewDocumentButton est NULL lors de l'activation/désactivation");
+                        }
+
+                        if (SyncRepositoryButton != null)
+                        {
+                            SyncRepositoryButton.IsEnabled = enabled;
+                            LogDebug($"✅ SyncRepositoryButton {(enabled ? "activé" : "désactivé")}");
+                        }
+                        else
+                        {
+                            LogDebug("❌ SyncRepositoryButton est NULL lors de l'activation/désactivation");
+                        }
+
+                        // Optionnel: Activer d'autres boutons liés à la connexion
+                        if (EditDocumentButton != null)
+                        {
+                            EditDocumentButton.IsEnabled = enabled;
+                        }
+                        if (DeleteDocumentButton != null)
+                        {
+                            DeleteDocumentButton.IsEnabled = enabled;
+                        }
+                    }
+                    catch (Exception dispatcherEx)
+                    {
+                        LogDebug($"❌ Erreur dans le Dispatcher: {dispatcherEx.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur lors de l'activation/désactivation des boutons: {ex.Message}");
             }
         }
 
@@ -258,6 +354,9 @@ namespace TextLabClient
                     ApiVersionText.Text = $"v{healthInfo.Version ?? "N/A"}";
                     SetStatus("Connexion réussie");
                     
+                    // Activer les boutons qui nécessitent une connexion
+                    EnableConnectionButtons(true);
+                    
                     // Charger automatiquement les repositories
                     await LoadRepositories();
                 }
@@ -267,6 +366,9 @@ namespace TextLabClient
                     ApiVersionText.Text = "";
                     SetStatus("Échec de la connexion");
                     _repositories.Clear();
+                    
+                    // Désactiver les boutons qui nécessitent une connexion
+                    EnableConnectionButtons(false);
                 }
             }
             catch (Exception ex)
@@ -274,6 +376,10 @@ namespace TextLabClient
                 SetConnectionStatus("❌ Erreur");
                 ApiVersionText.Text = "";
                 SetStatus($"Erreur: {ex.Message}");
+                
+                // Désactiver les boutons qui nécessitent une connexion
+                EnableConnectionButtons(false);
+                
                 MessageBox.Show($"Erreur:\n{ex.Message}", "Erreur", 
                               MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -313,7 +419,7 @@ namespace TextLabClient
                     SetStatus($"Repository ajouté: {repo.Name} (ID: {repo.Id})");
                 }
                 
-                SetStatus($"✅ {repositories.Count} repository(s) chargé(s) avec succès");
+                SetStatus($"✅ {repositories.Count} repository(s) chargé(s) avec succès - Ctrl+N pour nouveau document");
                 RepositoryInfoText.Text = $"{repositories.Count} repository(s) disponible(s)";
             }
             catch (Exception ex)
@@ -478,7 +584,7 @@ namespace TextLabClient
                 var versionsResult = await _apiService.GetDocumentVersionsAsync(document.Id);
                 
                 LogDebug($"Versions result: {versionsResult?.TotalVersions ?? 0} versions trouvées");
-                if (versionsResult?.Versions != null)
+                if (versionsResult != null)
                 {
                     LogDebug($"Versions.Count: {versionsResult.Versions.Count}");
                     foreach (var v in versionsResult.Versions)
@@ -684,6 +790,198 @@ namespace TextLabClient
         private async void RefreshRepositoriesButton_Click(object sender, RoutedEventArgs e)
         {
             await LoadRepositories();
+        }
+
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Actualiser les documents du repository sélectionné
+            if (_selectedRepository != null)
+            {
+                await LoadDocuments();
+                SetStatus($"Documents actualisés pour {_selectedRepository.Name}");
+            }
+            else
+            {
+                await LoadRepositories();
+                SetStatus("Repositories actualisés");
+            }
+        }
+
+        private void MainWindow_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            // Raccourci Ctrl+N pour nouveau document
+            if (e.Key == System.Windows.Input.Key.N && System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
+            {
+                LogDebug("🎹 Raccourci Ctrl+N détecté - création de document");
+                NewDocumentButton_Click(sender, new RoutedEventArgs());
+                e.Handled = true;
+            }
+            // Raccourci F5 pour actualiser
+            else if (e.Key == System.Windows.Input.Key.F5)
+            {
+                LogDebug("🎹 Raccourci F5 détecté - actualisation");
+                RefreshButton_Click(sender, new RoutedEventArgs());
+                e.Handled = true;
+            }
+        }
+
+        private void AboutButton_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("TextLab Client v1.0\n\nClient Windows pour l'API TextLab\n\nFonctionnalités:\n• Connexion aux repositories\n• Visualisation des documents\n• Création de nouveaux documents (Ctrl+N)\n• Historique des versions\n\nUtilisez Ctrl+N pour créer un nouveau document rapidement !",
+                           "À propos de TextLab Client", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private async void LogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var logs = await LoggingService.GetLogsContentAsync(200); // 200 dernières lignes
+                
+                var logsWindow = new Window
+                {
+                    Title = "Logs TextLab Client",
+                    Width = 800,
+                    Height = 600,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this
+                };
+
+                var scrollViewer = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+                var textBlock = new TextBlock
+                {
+                    Text = logs,
+                    FontFamily = new FontFamily("Consolas"),
+                    FontSize = 12,
+                    Margin = new Thickness(10),
+                    TextWrapping = TextWrapping.Wrap
+                };
+
+                scrollViewer.Content = textBlock;
+                logsWindow.Content = scrollViewer;
+                
+                // Scroller vers la fin
+                logsWindow.Loaded += (s, args) => scrollViewer.ScrollToEnd();
+                
+                logsWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur lors de l'ouverture des logs: {ex.Message}", "Erreur", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OpenLogsFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var logPath = LoggingService.GetLogFilePath();
+                var logDir = Path.GetDirectoryName(logPath);
+                
+                if (Directory.Exists(logDir))
+                {
+                    System.Diagnostics.Process.Start("explorer.exe", logDir);
+                }
+                else
+                {
+                    MessageBox.Show("Le dossier de logs n'existe pas encore.\nLes logs seront créés au premier lancement.", 
+                        "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur lors de l'ouverture du dossier: {ex.Message}", "Erreur", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void NewDocumentButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Vérifier que nous avons une connexion
+                if (!_apiService.IsConnected)
+                {
+                    MessageBox.Show("❌ Aucune connexion à l'API. Testez la connexion d'abord.",
+                                   "Connexion requise", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Déterminer le repository pré-sélectionné
+                string? preSelectedRepositoryId = null;
+                
+                // Si un repository est sélectionné dans la liste
+                if (_selectedRepository != null)
+                {
+                    preSelectedRepositoryId = _selectedRepository.Id;
+                    LogDebug($"📁 Repository pré-sélectionné: {_selectedRepository.Name} ({_selectedRepository.Id})");
+                }
+                // Sinon, essayer de détecter depuis l'arbre sélectionné
+                else if (DocumentsTreeView.SelectedItem is DocumentTreeItem selectedItem)
+                {
+                    if (selectedItem.Type == "repository" && selectedItem.Tag is Repository repoFromTree)
+                    {
+                        preSelectedRepositoryId = repoFromTree.Id;
+                        LogDebug($"📁 Repository détecté depuis l'arbre: {repoFromTree.Name} ({repoFromTree.Id})");
+                    }
+                    else if (selectedItem.Type == "document" || selectedItem.Type == "folder" || selectedItem.Type == "version")
+                    {
+                        // Pour les documents, versions ou dossiers, utiliser le repository actuellement sélectionné
+                        // car l'arbre est organisé par repository
+                        if (_selectedRepository != null)
+                        {
+                            preSelectedRepositoryId = _selectedRepository.Id;
+                            LogDebug($"📁 Repository détecté depuis sélection courante: {_selectedRepository.Name} ({_selectedRepository.Id})");
+                        }
+                    }
+                }
+
+                // Ouvrir la fenêtre de création
+                var newDocWindow = new NewDocumentWindow(_apiService, preSelectedRepositoryId);
+                newDocWindow.Owner = this;
+
+                SetStatus("Ouverture de la fenêtre de création de document...");
+
+                if (newDocWindow.ShowDialog() == true && newDocWindow.DocumentCreated)
+                {
+                    var createdDoc = newDocWindow.CreatedDocument;
+                    LogDebug($"✅ Document créé avec succès: {createdDoc?.Title} (ID: {createdDoc?.Id})");
+
+                    // Actualiser les documents pour voir le nouveau document
+                    if (_selectedRepository != null)
+                    {
+                        await LoadDocuments();
+                        SetStatus($"Document '{createdDoc?.Title}' créé et liste actualisée");
+                    }
+                    else
+                    {
+                        // Si aucun repository n'était sélectionné, charger tous les repositories
+                        await LoadRepositories();
+                        SetStatus($"Document '{createdDoc?.Title}' créé - actualisez le repository pour le voir");
+                    }
+
+                    // Optionnel: sélectionner et développer le repository du nouveau document
+                    if (createdDoc != null && !string.IsNullOrEmpty(preSelectedRepositoryId))
+                    {
+                        var repoToSelect = _repositories.FirstOrDefault(r => r.Id == preSelectedRepositoryId);
+                        if (repoToSelect != null && RepositoriesListBox.SelectedItem != repoToSelect)
+                        {
+                            RepositoriesListBox.SelectedItem = repoToSelect;
+                        }
+                    }
+                }
+                else
+                {
+                    SetStatus("Création de document annulée");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur dans NewDocumentButton_Click: {ex.Message}");
+                MessageBox.Show($"❌ Erreur lors de l'ouverture de la fenêtre de création:\n\n{ex.Message}",
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+                SetStatus("Erreur lors de la création de document");
+            }
         }
 
         protected override void OnClosed(EventArgs e)

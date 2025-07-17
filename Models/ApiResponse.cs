@@ -7,12 +7,43 @@ namespace TextLabClient.Models
 {
     public class ApiResponse<T>
     {
+        [JsonProperty("success")]
         public bool Success { get; set; }
+        
+        [JsonProperty("data")]
         public T? Data { get; set; }
+        
+        [JsonProperty("message")]
         public string? Message { get; set; }
+        
+        [JsonProperty("error")]
         public string? Error { get; set; }
+        
+        // Alternative property names for compatibility
+        [JsonProperty("isSuccess")]
+        public bool IsSuccess { get; set; }
     }
 
+    // Nouveau modèle correspondant au schéma OpenAPI
+    public class DocumentListResponse
+    {
+        [JsonProperty("documents")]
+        public List<Document> Documents { get; set; } = new List<Document>();
+        
+        [JsonProperty("total")]
+        public int Total { get; set; }
+        
+        [JsonProperty("page")]
+        public int Page { get; set; }
+        
+        [JsonProperty("size")]
+        public int Size { get; set; }
+        
+        [JsonProperty("pages")]
+        public int Pages { get; set; }
+    }
+
+    // Ancien modèle pour compatibilité
     public class DocumentsResponse
     {
         [JsonProperty("documents")]
@@ -33,11 +64,22 @@ namespace TextLabClient.Models
 
     public class DocumentContent
     {
+        [JsonProperty("content")]
         public string Content { get; set; } = string.Empty;
+        
+        [JsonProperty("git_path")]
         public string GitPath { get; set; } = string.Empty;
+        
+        [JsonProperty("version")]
         public string Version { get; set; } = string.Empty;
+        
+        [JsonProperty("last_modified")]
         public DateTime LastModified { get; set; }
+        
+        [JsonProperty("repository_name")]
         public string RepositoryName { get; set; } = string.Empty;
+        
+        [JsonProperty("file_size_bytes")]
         public int FileSizeBytes { get; set; }
     }
 
