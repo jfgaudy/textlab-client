@@ -3,20 +3,166 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <!-- Styles globaux -->
-        <Style TargetType="Button">
-            <Setter Property="Margin" Value="5"/>
-            <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="MinWidth" Value="80"/>
-        </Style>
+        <!-- Styles globaux modernes -->
         
-        <Style TargetType="TextBox">
+        <!-- Couleurs principales -->
+        <SolidColorBrush x:Key="PrimaryBrush" Color="#0078D4"/>
+        <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#106EBE"/>
+        <SolidColorBrush x:Key="SuccessBrush" Color="#107C10"/>
+        <SolidColorBrush x:Key="SuccessHoverBrush" Color="#0E6B0E"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#D13438"/>
+        <SolidColorBrush x:Key="DangerHoverBrush" Color="#B82B2F"/>
+        <SolidColorBrush x:Key="BackgroundBrush" Color="#F5F5F5"/>
+        <SolidColorBrush x:Key="CardBrush" Color="White"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#E1E1E1"/>
+        
+        <!-- Style de bouton moderne -->
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,8"/>
             <Setter Property="Margin" Value="5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="MinWidth" Value="80"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource PrimaryHoverBrush}"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#CCCCCC"/>
+                    <Setter Property="Foreground" Value="#666666"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Style de bouton par défaut hérite du moderne -->
+        <Style TargetType="Button" BasedOn="{StaticResource ModernButton}"/>
+
+        <!-- Variantes de boutons -->
+        <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="{StaticResource SuccessBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource SuccessHoverBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="{StaticResource DangerBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource DangerHoverBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F0F8FF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Style de TextBox moderne -->
+        <Style x:Key="ModernTextBox" TargetType="TextBox">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Style de TextBox par défaut hérite du moderne -->
+        <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}"/>
+
+        <!-- Style de ComboBox moderne -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Style de GroupBox moderne -->
+        <Style TargetType="GroupBox">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <!-- Style de TextBlock -->
+        <Style TargetType="TextBlock">
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- Style de Card (Border) -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="15"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#CCCCCC" Direction="270" ShadowDepth="2" Opacity="0.3" BlurRadius="4"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Style de ListBox moderne -->
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="5"/>
         </Style>
-        
-        <Style TargetType="TextBlock">
-            <Setter Property="Margin" Value="5"/>
+
+        <!-- Style de TreeView moderne -->
+        <Style TargetType="TreeView">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="5"/>
+        </Style>
+
+        <!-- Style de TabControl moderne -->
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+        </Style>
+
+        <!-- Style de DataGrid moderne -->
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="RowBackground" Value="White"/>
+            <Setter Property="AlternatingRowBackground" Value="#FAFAFA"/>
         </Style>
     </Application.Resources>
 </Application> 

@@ -1,0 +1,328 @@
+<Window x:Class="TextLabClient.RepositoryManagementWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Gestion des Repositories - TextLab" Height="700" Width="1000"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F5F5">
+
+    <Window.Resources>
+        <!-- Styles -->
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Background" Value="#0078D4"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#106EBE"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#CCCCCC"/>
+                    <Setter Property="Foreground" Value="#666666"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="#D13438"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#B82B2F"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="#107C10"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#0E6B0E"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ModernTextBox" TargetType="TextBox">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="White"/>
+        </Style>
+
+        <Style x:Key="ModernComboBox" TargetType="ComboBox">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="White"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#0078D4" Padding="20,15">
+            <StackPanel>
+                <TextBlock Text="🗂️ Gestion des Repositories" 
+                          FontSize="24" FontWeight="Bold" Foreground="White"/>
+                <TextBlock Text="Configurez et gérez vos repositories Git locaux et distants"
+                          FontSize="14" Foreground="#E1E5F2" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content -->
+        <TabControl Grid.Row="1" Background="White" Margin="10">
+            
+            <!-- Tab: Repositories -->
+            <TabItem Header="📋 Repositories" FontSize="14">
+                <Grid Margin="20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Toolbar -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
+                        <Button Name="BtnRefreshRepositories" Content="🔄 Actualiser" 
+                               Style="{StaticResource ModernButton}" Click="BtnRefreshRepositories_Click"/>
+                        <Button Name="BtnAddRepository" Content="➕ Nouveau Repository" 
+                               Style="{StaticResource SuccessButton}" Click="BtnAddRepository_Click"/>
+                        <Separator Width="10" Background="Transparent"/>
+                        <Button Name="BtnPullAll" Content="📥 Pull Tous" 
+                               Style="{StaticResource ModernButton}" Click="BtnPullAll_Click"/>
+                        <Button Name="BtnGetSystemStatus" Content="📊 État Système" 
+                               Style="{StaticResource ModernButton}" Click="BtnGetSystemStatus_Click"/>
+                    </StackPanel>
+
+                    <!-- Repository List -->
+                    <ListView Name="LvRepositories" Grid.Row="1" 
+                             BorderBrush="#DDDDDD" BorderThickness="1"
+                             SelectionChanged="LvRepositories_SelectionChanged">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Nom" Width="150" DisplayMemberBinding="{Binding DisplayName}"/>
+                                <GridViewColumn Header="Type" Width="80" DisplayMemberBinding="{Binding TypeDisplay}"/>
+                                <GridViewColumn Header="Statut" Width="120" DisplayMemberBinding="{Binding StatusDisplay}"/>
+                                <GridViewColumn Header="Chemin Local" Width="200" DisplayMemberBinding="{Binding LocalPath}"/>
+                                <GridViewColumn Header="URL Distante" Width="200" DisplayMemberBinding="{Binding RemoteUrl}"/>
+                                <GridViewColumn Header="Description" Width="150" DisplayMemberBinding="{Binding Description}"/>
+                                <GridViewColumn Header="Modifié" Width="120" DisplayMemberBinding="{Binding UpdatedAt, StringFormat='{}{0:dd/MM/yyyy}'}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <!-- Repository Actions -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,15,0,0">
+                        <Button Name="BtnActivateRepo" Content="✅ Activer" 
+                               Style="{StaticResource SuccessButton}" Click="BtnActivateRepo_Click" IsEnabled="False"/>
+                        <Button Name="BtnSetDefaultRepo" Content="⭐ Par Défaut" 
+                               Style="{StaticResource ModernButton}" Click="BtnSetDefaultRepo_Click" IsEnabled="False"/>
+                        <Button Name="BtnPullRepo" Content="📥 Pull" 
+                               Style="{StaticResource ModernButton}" Click="BtnPullRepo_Click" IsEnabled="False"/>
+                        <Button Name="BtnConfigCredentials" Content="🔐 Credentials" 
+                               Style="{StaticResource ModernButton}" Click="BtnConfigCredentials_Click" IsEnabled="False"/>
+                        <Button Name="BtnDeleteRepo" Content="🗑️ Supprimer" 
+                               Style="{StaticResource DangerButton}" Click="BtnDeleteRepo_Click" IsEnabled="False"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab: Configuration -->
+            <TabItem Header="⚙️ Configuration" FontSize="14">
+                <ScrollViewer Margin="20">
+                    <StackPanel>
+                        <TextBlock Text="Nouveau Repository" FontSize="18" FontWeight="Bold" Margin="0,0,0,15"/>
+                        
+                        <!-- Repository Type -->
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Type :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <ComboBox Name="CbRepositoryType" Grid.Column="1" Style="{StaticResource ModernComboBox}"
+                                     SelectionChanged="CbRepositoryType_SelectionChanged">
+                                <ComboBoxItem Content="Repository Git Local" Tag="local"/>
+                                <ComboBoxItem Content="Repository GitHub" Tag="github"/>
+                            </ComboBox>
+                        </Grid>
+
+                        <!-- Common Fields -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Nom :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox Name="TxtRepoName" Grid.Column="1" Style="{StaticResource ModernTextBox}"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Description :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox Name="TxtRepoDescription" Grid.Column="1" Style="{StaticResource ModernTextBox}"/>
+                        </Grid>
+
+                        <!-- Local Repository Fields -->
+                        <StackPanel Name="PnlLocalRepo" Visibility="Collapsed">
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Chemin Local :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBox Name="TxtLocalPath" Grid.Column="1" Style="{StaticResource ModernTextBox}"/>
+                                <Button Name="BtnBrowseLocal" Grid.Column="2" Content="📁" 
+                                       Style="{StaticResource ModernButton}" Click="BtnBrowseLocal_Click"/>
+                            </Grid>
+
+                            <CheckBox Name="ChkValidateStructure" Content="Valider/Créer la structure TextLab" 
+                                     IsChecked="True" Margin="150,0,0,15"/>
+                        </StackPanel>
+
+                        <!-- GitHub Repository Fields -->
+                        <StackPanel Name="PnlGitHubRepo" Visibility="Collapsed">
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="URL GitHub :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBox Name="TxtGitHubUrl" Grid.Column="1" Style="{StaticResource ModernTextBox}" 
+                                        ToolTip="Ex: https://github.com/utilisateur/repository"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Chemin Local :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBox Name="TxtGitHubLocalPath" Grid.Column="1" Style="{StaticResource ModernTextBox}"/>
+                                <Button Name="BtnBrowseGitHub" Grid.Column="2" Content="📁" 
+                                       Style="{StaticResource ModernButton}" Click="BtnBrowseGitHub_Click"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Branche :" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBox Name="TxtBranchName" Grid.Column="1" Style="{StaticResource ModernTextBox}" 
+                                        Text="main"/>
+                            </Grid>
+
+                            <CheckBox Name="ChkCloneIfMissing" Content="Cloner si le repository local n'existe pas" 
+                                     IsChecked="True" Margin="150,0,0,15"/>
+                        </StackPanel>
+
+                        <!-- Options -->
+                        <CheckBox Name="ChkSetAsDefault" Content="Définir comme repository par défaut" 
+                                 Margin="150,0,0,20"/>
+
+                        <!-- Actions -->
+                        <StackPanel Orientation="Horizontal" Margin="150,0,0,0">
+                            <Button Name="BtnValidateRepo" Content="✅ Valider" 
+                                   Style="{StaticResource ModernButton}" Click="BtnValidateRepo_Click"/>
+                            <Button Name="BtnCreateRepo" Content="➕ Créer Repository" 
+                                   Style="{StaticResource SuccessButton}" Click="BtnCreateRepo_Click"/>
+                            <Button Name="BtnClearForm" Content="🧹 Effacer" 
+                                   Style="{StaticResource ModernButton}" Click="BtnClearForm_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Tab: Synchronisation -->
+            <TabItem Header="🔄 Synchronisation" FontSize="14">
+                <Grid Margin="20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                        <TextBlock Text="Statut de Synchronisation" FontSize="18" FontWeight="Bold" Margin="0,0,0,15"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Name="BtnRefreshSync" Content="🔄 Actualiser" 
+                                   Style="{StaticResource ModernButton}" Click="BtnRefreshSync_Click"/>
+                            <Button Name="BtnPullAllRepos" Content="📥 Pull Tous les Repositories" 
+                                   Style="{StaticResource SuccessButton}" Click="BtnPullAllRepos_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ListView Name="LvSyncStatus" Grid.Row="1" 
+                             BorderBrush="#DDDDDD" BorderThickness="1">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Repository" Width="150" DisplayMemberBinding="{Binding RepositoryName}"/>
+                                <GridViewColumn Header="Peut Pull" Width="80" DisplayMemberBinding="{Binding CanPull}"/>
+                                <GridViewColumn Header="Remote" Width="80" DisplayMemberBinding="{Binding HasRemote}"/>
+                                <GridViewColumn Header="En Retard" Width="80" DisplayMemberBinding="{Binding BehindCommits}"/>
+                                <GridViewColumn Header="En Avance" Width="80" DisplayMemberBinding="{Binding AheadCommits}"/>
+                                <GridViewColumn Header="Modif. Locales" Width="100" DisplayMemberBinding="{Binding LocalChanges}"/>
+                                <GridViewColumn Header="Dernier Pull" Width="120" DisplayMemberBinding="{Binding LastPull, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}"/>
+                                <GridViewColumn Header="Statut" Width="200" DisplayMemberBinding="{Binding StatusMessage}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab: Diagnostics -->
+            <TabItem Header="🔍 Diagnostics" FontSize="14">
+                <Grid Margin="20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
+                        <Button Name="BtnGetDiagnostics" Content="🔍 Diagnostics Architecture" 
+                               Style="{StaticResource ModernButton}" Click="BtnGetDiagnostics_Click"/>
+                        <Button Name="BtnGetEnvironmentStats" Content="📊 Statistiques Environnement" 
+                               Style="{StaticResource ModernButton}" Click="BtnGetEnvironmentStats_Click"/>
+                        <Button Name="BtnHealthCheck" Content="❤️ Health Check" 
+                               Style="{StaticResource SuccessButton}" Click="BtnHealthCheck_Click"/>
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1">
+                        <TextBox Name="TxtDiagnostics" 
+                                Background="Black" Foreground="#00FF00" 
+                                FontFamily="Consolas" FontSize="12"
+                                IsReadOnly="True" TextWrapping="Wrap"
+                                VerticalScrollBarVisibility="Auto"
+                                Padding="10"
+                                Text="Cliquez sur un bouton pour obtenir des informations de diagnostic..."/>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2" Background="#F0F0F0" BorderBrush="#DDDDDD" BorderThickness="0,1,0,0" Padding="15,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Name="TxtStatus" Text="Prêt" VerticalAlignment="Center"/>
+                <Button Name="BtnClose" Grid.Column="1" Content="Fermer" 
+                       Style="{StaticResource ModernButton}" Click="BtnClose_Click"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window> 

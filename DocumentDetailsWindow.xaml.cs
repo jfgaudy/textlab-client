@@ -420,5 +420,30 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
         {
             this.Close();
         }
+
+        private void CopyIdButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_document?.Id))
+                {
+                    System.Windows.Clipboard.SetText(_document.Id);
+                    SetStatus($"ID copié: {_document.Id}");
+                    MessageBox.Show($"ID du document copié dans le presse-papiers:\n\n{_document.Id}", 
+                                   "ID Copié", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Aucun ID de document disponible à copier.", 
+                                   "Erreur", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de la copie: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la copie de l'ID:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
     }
 } 

@@ -12,7 +12,7 @@ namespace TextLabClient.Services
 {
     public class TextLabApiService
     {
-        private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
         private string _baseUrl = "https://textlab-api.onrender.com";
 
         public bool IsConnected { get; private set; }
@@ -50,6 +50,120 @@ namespace TextLabClient.Services
             {
                 IsConnected = false;
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Teste les nouveaux endpoints d'initialisation et diagnostics pour résoudre les problèmes Git Service
+        /// </summary>
+        public async Task<(bool Success, string Message)> TestInitializationEndpointsAsync()
+        {
+            var results = new StringBuilder();
+            bool hasErrors = false;
+
+            try
+            {
+                // Test 1: Diagnostics détaillés
+                results.AppendLine("🔍 Test des endpoints d'initialisation:");
+                
+                try
+                {
+                    var diagnosticsResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/diagnostics");
+                    if (diagnosticsResponse.IsSuccessStatusCode)
+                    {
+                        var diagnostics = await diagnosticsResponse.Content.ReadAsStringAsync();
+                        results.AppendLine("✅ Diagnostics: OK");
+                        
+                        // Vérifier si le problème Git Service est présent
+                        if (diagnostics.Contains("git_service") || diagnostics.Contains("ServiceInitializer"))
+                        {
+                            results.AppendLine("⚠️ Information Git Service détectée dans diagnostics");
+                        }
+                    }
+                    else
+                    {
+                        results.AppendLine($"❌ Diagnostics: {diagnosticsResponse.StatusCode}");
+                        hasErrors = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    results.AppendLine($"❌ Diagnostics: Exception - {ex.Message}");
+                    hasErrors = true;
+                }
+
+                // Test 2: Stats environment (nouveau endpoint mentionné dans les logs)
+                try
+                {
+                    var statsResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/stats/environment");
+                    if (statsResponse.IsSuccessStatusCode)
+                    {
+                        results.AppendLine("✅ Stats Environment: OK");
+                    }
+                    else
+                    {
+                        results.AppendLine($"❌ Stats Environment: {statsResponse.StatusCode}");
+                        hasErrors = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    results.AppendLine($"❌ Stats Environment: Exception - {ex.Message}");
+                    hasErrors = true;
+                }
+
+                // Test 3: Admin Status (celui qui cause l'erreur Git Service)
+                try
+                {
+                    var adminStatusResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/admin/status");
+                    if (adminStatusResponse.IsSuccessStatusCode)
+                    {
+                        results.AppendLine("✅ Admin Status: OK");
+                    }
+                    else
+                    {
+                        var errorContent = await adminStatusResponse.Content.ReadAsStringAsync();
+                        results.AppendLine($"❌ Admin Status: {adminStatusResponse.StatusCode}");
+                        
+                        // Vérifier si c'est l'erreur Git Service spécifique
+                        if (errorContent.Contains("get_git_service"))
+                        {
+                            results.AppendLine("🔧 Erreur Git Service détectée - problème côté serveur");
+                            results.AppendLine("   → ServiceInitializer.get_git_service() manquant");
+                        }
+                        hasErrors = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    results.AppendLine($"❌ Admin Status: Exception - {ex.Message}");
+                    hasErrors = true;
+                }
+
+                // Test 4: Health endpoint avec paramètres (vu dans les logs avec erreur 422)
+                try
+                {
+                    var healthDetailedResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/health");
+                    if (healthDetailedResponse.IsSuccessStatusCode)
+                    {
+                        results.AppendLine("✅ Documents Health: OK");
+                    }
+                    else
+                    {
+                        results.AppendLine($"⚠️ Documents Health: {healthDetailedResponse.StatusCode} (attendu selon logs)");
+                        // 422 est attendu selon les logs, donc pas d'erreur
+                    }
+                }
+                catch (Exception ex)
+                {
+                    results.AppendLine($"❌ Documents Health: Exception - {ex.Message}");
+                }
+
+                return (!hasErrors, results.ToString());
+            }
+            catch (Exception ex)
+            {
+                return (false, $"❌ Erreur générale lors du test: {ex.Message}");
             }
         }
 
@@ -434,20 +548,7 @@ namespace TextLabClient.Services
             }
         }
 
-        public async Task<string> GetEnvironmentStatsAsync()
-        {
-            try
-            {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/stats/environment");
-                response.EnsureSuccessStatusCode();
 
-                return await response.Content.ReadAsStringAsync();
-            }
-            catch (Exception ex)
-            {
-                return $"Erreur stats environnement: {ex.Message}";
-            }
-        }
 
         // Méthode de test pour diagnostiquer les problèmes d'endpoints
         public async Task<string> TestEndpointsAsync(string documentId)
@@ -505,6 +606,229 @@ namespace TextLabClient.Services
             }
             
             return results.ToString();
+        }
+
+        // ===== NOUVEAUX ENDPOINTS API =====
+
+        /// <summary>
+        /// Utilise les nouveaux endpoints publics pour récupérer les repositories
+        /// </summary>
+        public async Task<List<Repository>> GetPublicRepositoriesAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/repositories/");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 GetPublicRepositories Response: {content}");
+
+                return JsonConvert.DeserializeObject<List<Repository>>(content) ?? new List<Repository>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetPublicRepositoriesAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Récupère les détails d'un repository spécifique via l'endpoint public
+        /// </summary>
+        public async Task<Repository?> GetRepositoryDetailsAsync(string repositoryId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/repositories/{repositoryId}");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 GetRepositoryDetails Response: {content}");
+
+                return JsonConvert.DeserializeObject<Repository>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetRepositoryDetailsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Récupère le nombre de documents dans un repository
+        /// </summary>
+        public async Task<object?> GetRepositoryDocumentCountAsync(string repositoryId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/repositories/{repositoryId}/documents/count");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<object>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetRepositoryDocumentCountAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Supprime un document avec support d'archivage
+        /// </summary>
+        public async Task<object?> DeleteDocumentAsync(string documentId, string author, bool softDelete = false)
+        {
+            try
+            {
+                var url = $"{_baseUrl}/api/v1/documents/{documentId}?author={Uri.EscapeDataString(author)}&soft_delete={softDelete}";
+                var response = await _httpClient.DeleteAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                {
+                    return new { Success = true, Message = "Document supprimé avec succès" };
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<object>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur DeleteDocumentAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Archive un document (suppression logique)
+        /// </summary>
+        public async Task<object?> ArchiveDocumentAsync(string documentId, string author, string? reason = null)
+        {
+            try
+            {
+                var requestData = new
+                {
+                    soft_delete = true,
+                    reason = reason
+                };
+
+                var json = JsonConvert.SerializeObject(requestData);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/v1/documents/{documentId}/archive?author={Uri.EscapeDataString(author)}");
+                response.EnsureSuccessStatusCode();
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<object>(responseContent);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur ArchiveDocumentAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Met à jour un document via le nouvel endpoint PUT
+        /// </summary>
+        public async Task<object?> UpdateDocumentAsync(string documentId, string author, object updateData)
+        {
+            try
+            {
+                var json = JsonConvert.SerializeObject(updateData);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PutAsync($"{_baseUrl}/api/v1/documents/{documentId}?author={Uri.EscapeDataString(author)}", content);
+                response.EnsureSuccessStatusCode();
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 UpdateDocument Response: {responseContent}");
+
+                return JsonConvert.DeserializeObject<object>(responseContent);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur UpdateDocumentAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Change le repository actif
+        /// </summary>
+        public async Task<bool> SwitchRepositoryAsync(int repositoryId)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/switch-repository/{repositoryId}", null);
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur SwitchRepositoryAsync: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Récupère les diagnostics de l'architecture adaptative
+        /// </summary>
+        public async Task<object?> GetArchitectureDiagnosticsAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/diagnostics");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<object>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetArchitectureDiagnosticsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Récupère les statistiques d'environnement
+        /// </summary>
+        public async Task<object?> GetEnvironmentStatsAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/stats/environment");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<object>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetEnvironmentStatsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Health check spécifique à l'architecture adaptative
+        /// </summary>
+        public async Task<object?> GetDocumentsHealthAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/health");
+                response.EnsureSuccessStatusCode();
+
+                var content = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<object>(content);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentsHealthAsync: {ex.Message}");
+                return null;
+            }
         }
 
         public void Dispose()

@@ -10,12 +10,14 @@ using System.Windows.Input;
 using System.Windows.Media;
 using TextLabClient.Services;
 using TextLabClient.Models;
+using System.Collections.Generic; // Added for List
 
 namespace TextLabClient
 {
     public partial class MainWindow : Window
     {
         private readonly TextLabApiService _apiService = new TextLabApiService();
+        private readonly TextLabAdminService _adminService = new TextLabAdminService();
         private ObservableCollection<Repository> _repositories = new ObservableCollection<Repository>();
         private Repository? _selectedRepository;
         private readonly string _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "textlab_debug.log");
@@ -88,55 +90,7 @@ namespace TextLabClient
 
         private void EnableConnectionButtons(bool enabled)
         {
-            try
-            {
-                LogDebug($"🔘 {(enabled ? "Activation" : "Désactivation")} des boutons de connexion...");
-
-                // Utiliser Dispatcher pour s'assurer qu'on est sur le thread UI
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    try
-                    {
-                        if (NewDocumentButton != null)
-                        {
-                            NewDocumentButton.IsEnabled = enabled;
-                            LogDebug($"✅ NewDocumentButton {(enabled ? "activé" : "désactivé")}");
-                        }
-                        else
-                        {
-                            LogDebug("❌ NewDocumentButton est NULL lors de l'activation/désactivation");
-                        }
-
-                        if (SyncRepositoryButton != null)
-                        {
-                            SyncRepositoryButton.IsEnabled = enabled;
-                            LogDebug($"✅ SyncRepositoryButton {(enabled ? "activé" : "désactivé")}");
-                        }
-                        else
-                        {
-                            LogDebug("❌ SyncRepositoryButton est NULL lors de l'activation/désactivation");
-                        }
-
-                        // Optionnel: Activer d'autres boutons liés à la connexion
-                        if (EditDocumentButton != null)
-                        {
-                            EditDocumentButton.IsEnabled = enabled;
-                        }
-                        if (DeleteDocumentButton != null)
-                        {
-                            DeleteDocumentButton.IsEnabled = enabled;
-                        }
-                    }
-                    catch (Exception dispatcherEx)
-                    {
-                        LogDebug($"❌ Erreur dans le Dispatcher: {dispatcherEx.Message}");
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                LogDebug($"❌ Erreur lors de l'activation/désactivation des boutons: {ex.Message}");
-            }
+            TestInitButton.IsEnabled = enabled;
         }
 
         private void LogDebug(string message)
@@ -310,7 +264,7 @@ namespace TextLabClient
         {
             var settings = ConfigurationService.LoadSettings();
             ApiUrlTextBox.Text = settings.ApiUrl;
-            CurrentApiUrlText.Text = settings.ApiUrl;
+                            // URL affichée dans le champ ApiUrlTextBox
         }
 
         private void SaveSettings()
@@ -325,11 +279,78 @@ namespace TextLabClient
         private void SetStatus(string message)
         {
             StatusText.Text = message;
+            
+            // Mettre à jour l'indicateur visuel en fonction du message
+            try
+            {
+                var indicator = this.FindName("ConnectionStatusIndicator") as System.Windows.Shapes.Ellipse;
+                if (indicator != null)
+                {
+                    if (message.Contains("Erreur") || message.Contains("❌") || message.Contains("Échec"))
+                    {
+                        indicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D13438")); // Rouge
+                    }
+                    else if (message.Contains("réussi") || message.Contains("✅") || message.Contains("Connecté") || message.Contains("terminé"))
+                    {
+                        indicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#107C10")); // Vert
+                    }
+                    else if (message.Contains("Chargement") || message.Contains("🔄") || message.Contains("Synchronisation"))
+                    {
+                        indicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0078D4")); // Bleu
+                    }
+                    else
+                    {
+                        indicator.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#666666")); // Gris
+                    }
+                }
+            }
+            catch
+            {
+                // Ignorer si l'indicateur n'existe pas encore
+            }
         }
 
         private void SetConnectionStatus(string status)
         {
             ConnectionStatusText.Text = status;
+            
+            // Mettre à jour aussi la barre de statut
+            if (this.FindName("StatusBarConnectionText") is TextBlock statusBarText)
+            {
+                statusBarText.Text = status;
+            }
+            
+            // Mettre à jour les indicateurs de connexion
+            try
+            {
+                var indicator = this.FindName("ConnectionStatusIndicator") as System.Windows.Shapes.Ellipse;
+                var statusBarIndicator = this.FindName("StatusBarConnectionIndicator") as System.Windows.Shapes.Ellipse;
+                
+                SolidColorBrush color;
+                if (status.Contains("Connecté") || status.Contains("✅"))
+                {
+                    color = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#107C10")); // Vert
+                }
+                else if (status.Contains("Erreur") || status.Contains("❌") || status.Contains("Échec"))
+                {
+                    color = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D13438")); // Rouge
+                }
+                else if (status.Contains("Test") || status.Contains("🔄"))
+                {
+                    color = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0078D4")); // Bleu
+                }
+                else
+                {
+                    color = new SolidColorBrush(Colors.Gray); // Gris par défaut
+                }
+                
+                if (indicator != null) indicator.Fill = color;
+                if (statusBarIndicator != null) statusBarIndicator.Fill = color;
+            }
+            catch (Exception ex)
+            {
+                // Ignorer l'erreur de mise à jour de l'indicateur
+            }
         }
 
         private async void TestConnectionButton_Click(object sender, RoutedEventArgs e)
@@ -342,7 +363,6 @@ namespace TextLabClient
                 
                 // Sauvegarder l'URL
                 SaveSettings();
-                CurrentApiUrlText.Text = ApiUrlTextBox.Text;
                 
                 // Tester la connexion
                 _apiService.SetBaseUrl(ApiUrlTextBox.Text);
@@ -351,7 +371,10 @@ namespace TextLabClient
                 if (healthInfo != null)
                 {
                     SetConnectionStatus("✅ Connecté");
-                    ApiVersionText.Text = $"v{healthInfo.Version ?? "N/A"}";
+                    ApiVersionText.Text = $"API v{healthInfo.Version ?? "N/A"}";
+                    
+                    // URL déjà visible dans le champ ApiUrlTextBox
+                    
                     SetStatus("Connexion réussie");
                     
                     // Activer les boutons qui nécessitent une connexion
@@ -375,17 +398,93 @@ namespace TextLabClient
             {
                 SetConnectionStatus("❌ Erreur");
                 ApiVersionText.Text = "";
-                SetStatus($"Erreur: {ex.Message}");
-                
-                // Désactiver les boutons qui nécessitent une connexion
+                SetStatus($"Erreur de connexion: {ex.Message}");
+                _repositories.Clear();
                 EnableConnectionButtons(false);
-                
-                MessageBox.Show($"Erreur:\n{ex.Message}", "Erreur", 
-                              MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
                 TestConnectionButton.IsEnabled = true;
+            }
+        }
+
+        private async void TestInitButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                TestInitButton.IsEnabled = false;
+                SetStatus("Test de récupération des versions...");
+                
+                // TEST SPÉCIFIQUE DES VERSIONS
+                if (_selectedRepository != null)
+                {
+                    var documents = await _apiService.GetDocumentsAsync(_selectedRepository.Id);
+                    
+                    if (documents != null && documents.Count > 0)
+                    {
+                        // Prendre le premier document pour test
+                        var firstDoc = documents.First();
+                        LogDebug($"🧪 TEST VERSIONS pour document: {firstDoc.Title} (ID: {firstDoc.Id})");
+                        
+                        var versionsResult = await _apiService.GetDocumentVersionsAsync(firstDoc.Id);
+                        
+                        if (versionsResult != null)
+                        {
+                            LogDebug($"🧪 RÉSULTAT: {versionsResult.TotalVersions} versions total");
+                            LogDebug($"🧪 RÉSULTAT: {versionsResult.Versions.Count} versions dans la liste");
+                            
+                            foreach (var v in versionsResult.Versions)
+                            {
+                                LogDebug($"🧪 VERSION: {v.Version} | SHA: {v.CommitSha} | Auteur: {v.Author} | Date: {v.Date} | IsCurrent: {v.IsCurrent}");
+                            }
+                            
+                            // Afficher le résultat à l'utilisateur
+                            var message = $"Document testé: {firstDoc.Title}\n" +
+                                         $"Versions trouvées: {versionsResult.TotalVersions}\n" +
+                                         $"Versions dans liste: {versionsResult.Versions.Count}\n\n";
+                            
+                            if (versionsResult.Versions.Count > 0)
+                            {
+                                message += "Détails des versions:\n";
+                                foreach (var v in versionsResult.Versions.Take(3))
+                                {
+                                    message += $"• {v.Version} ({v.Author}, {v.Date:dd/MM/yyyy})\n";
+                                }
+                            }
+                            
+                            MessageBox.Show(message, "🧪 Test des Versions", MessageBoxButton.OK, MessageBoxImage.Information);
+                            SetStatus($"✅ Test versions réussi: {versionsResult.TotalVersions} versions trouvées");
+                        }
+                        else
+                        {
+                            LogDebug($"🧪 ERREUR: versionsResult est null");
+                            MessageBox.Show($"Erreur: Aucune version trouvée pour {firstDoc.Title}\nL'API a retourné null.", 
+                                          "❌ Test des Versions", MessageBoxButton.OK, MessageBoxImage.Error);
+                            SetStatus("❌ Test versions échec: result null");
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("Aucun document trouvé pour tester les versions.\nSélectionnez d'abord un repository et chargez les documents.", 
+                                      "⚠️ Test des Versions", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Sélectionnez d'abord un repository pour tester les versions.", 
+                                  "⚠️ Test des Versions", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"❌ Erreur test diagnostic: {ex.Message}");
+                LogDebug($"❌ Erreur test diagnostic: {ex.Message}");
+                MessageBox.Show($"Erreur lors du test des versions:\n{ex.Message}", 
+                              "❌ Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                TestInitButton.IsEnabled = true;
             }
         }
 
@@ -394,7 +493,8 @@ namespace TextLabClient
             try
             {
                 SetStatus("Chargement des repositories...");
-                var repositories = await _apiService.GetRepositoriesAsync();
+                // Utiliser les nouveaux endpoints publics
+                var repositories = await _apiService.GetPublicRepositoriesAsync();
                 
                 _repositories.Clear();
                 
@@ -416,7 +516,7 @@ namespace TextLabClient
                 foreach (var repo in repositories)
                 {
                     _repositories.Add(repo);
-                    SetStatus($"Repository ajouté: {repo.Name} (ID: {repo.Id})");
+                    SetStatus($"Repository ajouté: {repo.DisplayName} (Type: {repo.TypeDisplay})");
                 }
                 
                 SetStatus($"✅ {repositories.Count} repository(s) chargé(s) avec succès - Ctrl+N pour nouveau document");
@@ -429,6 +529,12 @@ namespace TextLabClient
                 MessageBox.Show($"Erreur détaillée:\n{ex}", "Erreur Debug", 
                               MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // Méthode pour recharger les repositories (alias pour compatibilité)
+        private async Task LoadRepositoriesAsync()
+        {
+            await LoadRepositories();
         }
 
         private void RepositoriesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -549,7 +655,12 @@ namespace TextLabClient
                     }), System.Windows.Threading.DispatcherPriority.Background);
                     
                     LogDebug($"🎯 Arbre construit avec succès - {documents.Count} documents chargés");
-                    SetStatus($"{documents.Count} document(s) chargé(s) pour {_selectedRepository.Name}");
+                    
+                    // Mettre à jour l'information du repository sélectionné
+                    RepositoryInfoText.Text = $"📁 {_selectedRepository.Name} • {documents.Count} document(s) • {_selectedRepository.Type}";
+                    
+                    // Status plus concis
+                    SetStatus($"✅ {documents.Count} document(s) chargé(s)");
                 }
                 else
                 {
@@ -560,7 +671,11 @@ namespace TextLabClient
                         "empty"
                     );
                     DocumentsTreeView.Items.Add(emptyNode);
-                    SetStatus($"Aucun document trouvé dans {_selectedRepository.Name}");
+                    
+                    // Mettre à jour l'information du repository même s'il est vide
+                    RepositoryInfoText.Text = $"📁 {_selectedRepository.Name} • Aucun document • {_selectedRepository.Type}";
+                    
+                    SetStatus($"❌ Aucun document trouvé");
                 }
             }
             catch (Exception ex)
@@ -581,6 +696,8 @@ namespace TextLabClient
             try
             {
                 LogDebug($"=== Chargement versions pour: {document.Title} ===");
+                
+                // Chargement des versions via l'API Phase 6
                 var versionsResult = await _apiService.GetDocumentVersionsAsync(document.Id);
                 
                 LogDebug($"Versions result: {versionsResult?.TotalVersions ?? 0} versions trouvées");
@@ -593,50 +710,35 @@ namespace TextLabClient
                     }
                 }
                 
-                if (versionsResult != null && versionsResult.Versions.Count > 1)
+                if (versionsResult != null && versionsResult.Versions.Count > 0)
                 {
-                    LogDebug($"Document {document.Title} a {versionsResult.Versions.Count} versions - ajout dans l'arbre");
-                    
-                    // Seulement afficher les versions si il y en a plus d'une
+                    // Ajouter directement les versions sous le document (sans dossier intermédiaire)
                     foreach (var version in versionsResult.Versions.OrderByDescending(v => v.Date))
                     {
-                        var versionIcon = version.IsCurrent ? "🔷" : "📦"; // Icône différente pour la version actuelle
-                        var versionInfo = $"{version.Author} - {version.Date:dd/MM/yyyy}";
-                        if (version.IsCurrent)
+                        var versionItem = new DocumentTreeItem
                         {
-                            versionInfo += " (actuelle)";
-                        }
-                        
-                        LogDebug($"Ajout version: {version.Version} avec icône {versionIcon}");
-                        
-                        var versionNode = new DocumentTreeItem(
-                            version.Version, 
-                            versionIcon, 
-                            versionInfo,
-                            "version",
-                            version,
-                            version.CommitSha
-                        );
-                        
-                        docNode.Children.Add(versionNode);
+                            Name = $"📄 {version.Version} - {version.CommitSha?.Substring(0, 7)} ({version.Date:dd/MM/yyyy HH:mm})",
+                            Info = $"Version: {version.Version}\nSHA: {version.CommitSha}\nAuteur: {version.Author}\nDate: {version.Date:dd/MM/yyyy HH:mm:ss}\nMessage: {version.Message}",
+                            Type = "version",
+                            Icon = "📄",
+                            Version = version,
+                            VersionSha = version.CommitSha
+                        };
+                        docNode.Children.Add(versionItem);
                     }
-                    
-                    LogDebug($"LoadDocumentVersionsForTree terminé - {versionsResult.Versions.Count} versions ajoutées à l'arbre");
-                }
-                else if (versionsResult != null && versionsResult.Versions.Count == 1)
-                {
-                    // Une seule version, pas besoin d'afficher dans l'arbre
-                    LogDebug($"Document {document.Title} a 1 seule version - pas d'affichage dans l'arbre");
-                }
-                else
-                {
-                    LogDebug($"Document {document.Title} - aucune version trouvée ou erreur");
                 }
             }
             catch (Exception ex)
             {
-                // En cas d'erreur de chargement des versions, continuer silencieusement
-                LogDebug($"ERREUR chargement versions pour {document.Title}: {ex.Message}");
+                LogDebug($"ERREUR chargement versions: {ex.Message}");
+                
+                // Ajouter un message d'erreur informatif
+                var errorItem = new DocumentTreeItem
+                {
+                    Name = "❌ Erreur de connexion API",
+                    Info = $"Erreur: {ex.Message}\n\nLes endpoints /versions ne sont pas encore disponibles dans l'API de production."
+                };
+                docNode.Children.Add(errorItem);
             }
         }
 
@@ -827,8 +929,70 @@ namespace TextLabClient
 
         private void AboutButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("TextLab Client v1.0\n\nClient Windows pour l'API TextLab\n\nFonctionnalités:\n• Connexion aux repositories\n• Visualisation des documents\n• Création de nouveaux documents (Ctrl+N)\n• Historique des versions\n\nUtilisez Ctrl+N pour créer un nouveau document rapidement !",
+            MessageBox.Show("📚 TextLab Client v2.0\n\nClient Windows moderne pour l'API TextLab\n\n🚀 Fonctionnalités:\n• Gestion multi-repositories\n• Interface moderne avec cartes\n• Visualisation des documents\n• Création de nouveaux documents (Ctrl+N)\n• Synchronisation Git avancée\n• Historique des versions\n\n⌨️ Raccourcis:\n• Ctrl+N : Nouveau document\n• F5 : Actualiser\n\n🎨 Interface modernisée avec design Microsoft !",
                            "À propos de TextLab Client", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private async void SyncAllRepositoriesButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                SetStatus("Synchronisation de tous les repositories...");
+                LogDebug("🔄 Début de synchronisation de tous les repositories");
+                
+                // Si on a le service admin, utiliser la méthode de pull de tous les repos
+                var repositories = _repositories.ToList();
+                var successCount = 0;
+                var errorCount = 0;
+                
+                foreach (var repo in repositories)
+                {
+                    try
+                    {
+                        LogDebug($"🔄 Synchronisation de {repo.Name}...");
+                        var pullResult = await _adminService.PullRepositoryAsync(repo.Id);
+                        
+                        if (pullResult?.Success == true)
+                        {
+                            successCount++;
+                            LogDebug($"✅ Synchronisation réussie pour {repo.Name}");
+                        }
+                        else
+                        {
+                            errorCount++;
+                            LogDebug($"❌ Échec synchronisation pour {repo.Name}: {pullResult?.Message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        LogDebug($"❌ Erreur synchronisation {repo.Name}: {ex.Message}");
+                    }
+                }
+                
+                SetStatus($"Synchronisation terminée: {successCount} réussies, {errorCount} erreurs");
+                
+                if (successCount > 0)
+                {
+                    // Actualiser la liste des repositories
+                    await LoadRepositories();
+                    if (_selectedRepository != null)
+                    {
+                        await LoadDocuments();
+                    }
+                }
+                
+                MessageBox.Show($"Synchronisation terminée:\n\n✅ {successCount} repositories synchronisés\n❌ {errorCount} erreurs\n\nConsultez les logs pour plus de détails.",
+                               "Synchronisation", MessageBoxButton.OK, 
+                               successCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de la synchronisation: {ex.Message}");
+                LogDebug($"❌ Erreur dans SyncAllRepositoriesButton_Click: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la synchronisation:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private async void LogsButton_Click(object sender, RoutedEventArgs e)
@@ -937,37 +1101,32 @@ namespace TextLabClient
                 }
 
                 // Ouvrir la fenêtre de création
-                var newDocWindow = new NewDocumentWindow(_apiService, preSelectedRepositoryId);
+                var newDocWindow = new NewDocumentWindow(_apiService);
                 newDocWindow.Owner = this;
 
                 SetStatus("Ouverture de la fenêtre de création de document...");
 
-                if (newDocWindow.ShowDialog() == true && newDocWindow.DocumentCreated)
+                if (newDocWindow.ShowDialog() == true)
                 {
-                    var createdDoc = newDocWindow.CreatedDocument;
-                    LogDebug($"✅ Document créé avec succès: {createdDoc?.Title} (ID: {createdDoc?.Id})");
+                    LogDebug($"✅ Document créé avec succès");
 
                     // Actualiser les documents pour voir le nouveau document
                     if (_selectedRepository != null)
                     {
                         await LoadDocuments();
-                        SetStatus($"Document '{createdDoc?.Title}' créé et liste actualisée");
+                        SetStatus($"Document créé et liste actualisée");
                     }
                     else
                     {
                         // Si aucun repository n'était sélectionné, charger tous les repositories
                         await LoadRepositories();
-                        SetStatus($"Document '{createdDoc?.Title}' créé - actualisez le repository pour le voir");
+                        SetStatus($"Document créé - actualisez le repository pour le voir");
                     }
 
-                    // Optionnel: sélectionner et développer le repository du nouveau document
-                    if (createdDoc != null && !string.IsNullOrEmpty(preSelectedRepositoryId))
+                    // Actualiser la sélection si nécessaire
+                    if (_selectedRepository != null)
                     {
-                        var repoToSelect = _repositories.FirstOrDefault(r => r.Id == preSelectedRepositoryId);
-                        if (repoToSelect != null && RepositoriesListBox.SelectedItem != repoToSelect)
-                        {
-                            RepositoriesListBox.SelectedItem = repoToSelect;
-                        }
+                        LogDebug($"Repository actuel maintenu: {_selectedRepository.Name}");
                     }
                 }
                 else
@@ -983,6 +1142,96 @@ namespace TextLabClient
                 SetStatus("Erreur lors de la création de document");
             }
         }
+
+        // ===== GESTION DES REPOSITORIES =====
+
+        private void ManageRepositoriesButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                LogDebug("Ouverture de la fenêtre de gestion des repositories");
+                var repositoryWindow = new RepositoryManagementWindow
+                {
+                    Owner = this
+                };
+                repositoryWindow.ShowDialog();
+                
+                // Rafraîchir la liste des repositories après fermeture
+                _ = LoadRepositories();
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur dans ManageRepositoriesButton_Click: {ex.Message}");
+                MessageBox.Show($"❌ Erreur lors de l'ouverture de la gestion des repositories:\n\n{ex.Message}",
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void SyncRepositoriesButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                LogDebug("Synchronisation de tous les repositories");
+                SetStatus("Synchronisation en cours...");
+
+                // Récupérer tous les repositories
+                var repositories = await _adminService.GetRepositoriesAsync();
+                int successCount = 0;
+                int errorCount = 0;
+
+                foreach (var repo in repositories.Where(r => r.IsActive))
+                {
+                    try
+                    {
+                        var pullRequest = new PullRequest
+                        {
+                            RepositoryId = repo.Id,
+                            AutoResolveConflicts = false,
+                            ForcePull = false
+                        };
+
+                        var response = await _adminService.PullRepositoryAsync(repo.Id, pullRequest);
+                        if (response?.Success == true)
+                        {
+                            successCount++;
+                            LogDebug($"✅ Pull réussi pour {repo.Name}: {response.Changes.CommitsPulled} commits");
+                        }
+                        else
+                        {
+                            errorCount++;
+                            LogDebug($"❌ Échec du pull pour {repo.Name}: {response?.Error ?? "Erreur inconnue"}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        LogDebug($"❌ Exception lors du pull de {repo.Name}: {ex.Message}");
+                    }
+                }
+
+                SetStatus($"Synchronisation terminée: {successCount} réussis, {errorCount} échecs");
+                
+                string message = $"Synchronisation terminée:\n" +
+                               $"• {successCount} repositories synchronisés avec succès\n" +
+                               $"• {errorCount} erreurs";
+
+                MessageBox.Show(message, "Synchronisation", 
+                               errorCount == 0 ? MessageBoxButton.OK : MessageBoxButton.OK,
+                               errorCount == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+
+                // Rafraîchir la liste des documents
+                await LoadDocuments();
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur dans SyncRepositoriesButton_Click: {ex.Message}");
+                MessageBox.Show($"❌ Erreur lors de la synchronisation:\n\n{ex.Message}",
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+                SetStatus("Erreur lors de la synchronisation");
+            }
+        }
+
+        // Méthode supprimée - info repository maintenant dans le panneau gauche
 
         protected override void OnClosed(EventArgs e)
         {
