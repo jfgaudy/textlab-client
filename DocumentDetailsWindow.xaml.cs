@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -9,6 +11,7 @@ using TextLabClient.Models;
 using TextLabClient.Services;
 using System.Windows.Media; // Added for Brushes
 using System.Net.Http; // Added for HttpRequestException
+using Newtonsoft.Json; // Added for JSON formatting
 
 namespace TextLabClient
 {
@@ -783,11 +786,11 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 SetStatus("Restauration en cours...");
                 RestoreVersionButton.IsEnabled = false;
 
-                // Effectuer la restauration
-                var commitSha = selectedVersion.CommitSha ?? selectedVersion.Version;
+                // Effectuer la restauration avec le vrai endpoint API
+                var versionToRestore = selectedVersion.CommitSha ?? selectedVersion.Version;
                 var restoreResult = await _apiService.RestoreDocumentVersionAsync(
                     _document.Id, 
-                    commitSha, 
+                    versionToRestore, 
                     "TextLab Client User",
                     $"Restauration de la version {selectedVersion.Version}"
                 );
@@ -799,6 +802,7 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                     MessageBox.Show(
                         $"✅ Version restaurée avec succès!\n\n" +
                         $"Une nouvelle version a été créée avec le contenu de la version {selectedVersion.Version}.\n" +
+                        $"L'historique Git est préservé et la restauration apparaît comme un nouveau commit.\n" +
                         $"Le document va maintenant se recharger avec la nouvelle version.",
                         "Restauration réussie", 
                         MessageBoxButton.OK, 
@@ -849,24 +853,79 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 SetStatus("Comparaison en cours...");
                 CompareVersionButton.IsEnabled = false;
 
-                // Pour l'instant, on affiche les informations de base
-                // TODO: Implémenter une vraie comparaison diff si l'API le supporte
-                var currentVersion = _document.CurrentCommitSha ?? "HEAD";
-                var compareVersion = selectedVersion.CommitSha ?? selectedVersion.Version;
+                // Demander avec quelle version comparer
+                var compareChoice = MessageBox.Show(
+                    $"🔍 Comparer la version {selectedVersion.Version}\n\n" +
+                    $"Avec quelle version voulez-vous la comparer ?\n\n" +
+                    $"• OUI : Comparer avec la version actuelle\n" +
+                    $"• NON : Choisir une autre version\n" +
+                    $"• ANNULER : Annuler la comparaison",
+                    "Choisir la version de comparaison",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
 
-                var message = $"🔍 Comparaison de versions\n\n" +
-                             $"Version actuelle: {currentVersion}\n" +
-                             $"Version sélectionnée: {selectedVersion.Version}\n" +
-                             $"Auteur: {selectedVersion.Author}\n" +
-                             $"Date: {selectedVersion.Date:dd/MM/yyyy HH:mm}\n" +
-                             $"Message: {selectedVersion.Message}\n\n" +
-                             $"Fonctionnalité de comparaison détaillée en développement.\n" +
-                             $"Utilisez 'Voir' pour ouvrir la version dans une nouvelle fenêtre.";
+                if (compareChoice == MessageBoxResult.Cancel)
+                {
+                    SetStatus("Comparaison annulée");
+                    return;
+                }
 
-                MessageBox.Show(message, "Comparaison de versions", 
-                               MessageBoxButton.OK, MessageBoxImage.Information);
+                string version1, version2;
+                if (compareChoice == MessageBoxResult.Yes)
+                {
+                    // Comparer avec la version actuelle
+                    version1 = _document.CurrentCommitSha ?? "HEAD";
+                    version2 = selectedVersion.CommitSha ?? selectedVersion.Version;
+                }
+                else
+                {
+                    // Pour simplifier, comparer avec la version précédente dans la liste
+                    var versions = VersionsDataGrid.Items.Cast<DocumentVersion>().ToList();
+                    var selectedIndex = versions.IndexOf(selectedVersion);
+                    
+                    if (selectedIndex < versions.Count - 1)
+                    {
+                        var previousVersion = versions[selectedIndex + 1];
+                        version1 = selectedVersion.CommitSha ?? selectedVersion.Version;
+                        version2 = previousVersion.CommitSha ?? previousVersion.Version;
+                        
+                        var confirmPrevious = MessageBox.Show(
+                            $"Comparer :\n" +
+                            $"Version 1 : {selectedVersion.Version}\n" +
+                            $"Version 2 : {previousVersion.Version}\n\n" +
+                            $"Continuer ?",
+                            "Confirmer la comparaison",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+                            
+                        if (confirmPrevious != MessageBoxResult.Yes)
+                        {
+                            SetStatus("Comparaison annulée");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("Aucune version précédente disponible pour la comparaison.", 
+                                       "Pas de version précédente", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                }
 
-                SetStatus("Informations de comparaison affichées");
+                // Effectuer la comparaison via l'API
+                var compareResult = await _apiService.CompareDocumentVersionsAsync(_document.Id, version1, version2);
+                
+                if (compareResult != null)
+                {
+                    ShowComparisonResult(compareResult, selectedVersion, version1, version2);
+                    SetStatus("Comparaison terminée");
+                }
+                else
+                {
+                    MessageBox.Show("Impossible de comparer les versions. L'API n'a pas retourné de résultat.", 
+                                   "Erreur de comparaison", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    SetStatus("Erreur lors de la comparaison");
+                }
             }
             catch (Exception ex)
             {
@@ -877,6 +936,162 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             finally
             {
                 CompareVersionButton.IsEnabled = true;
+            }
+        }
+
+        private void ShowComparisonResult(object compareResult, DocumentVersion selectedVersion, string version1, string version2)
+        {
+            try
+            {
+                // Créer une fenêtre de comparaison dédiée
+                var comparisonWindow = new Window
+                {
+                    Title = $"Comparaison - {_document.Title}",
+                    Width = 1000,
+                    Height = 700,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    Background = (Brush)Application.Current.Resources["BackgroundBrush"]
+                };
+
+                var grid = new Grid();
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+                // Header avec informations de comparaison
+                var headerBorder = new Border
+                {
+                    Background = (Brush)Application.Current.Resources["CardBrush"],
+                    BorderBrush = (Brush)Application.Current.Resources["BorderBrush"],
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Padding = new Thickness(20, 15, 20, 15)
+                };
+
+                var headerStack = new StackPanel();
+                var titleBlock = new TextBlock
+                {
+                    Text = $"🔍 Comparaison de Versions - {_document.Title}",
+                    FontSize = 18,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (Brush)Application.Current.Resources["PrimaryBrush"],
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+
+                var versionInfoBlock = new TextBlock
+                {
+                    Text = $"Version 1: {version1} ↔ Version 2: {version2}",
+                    FontSize = 14,
+                    Foreground = Brushes.Gray
+                };
+
+                headerStack.Children.Add(titleBlock);
+                headerStack.Children.Add(versionInfoBlock);
+                headerBorder.Child = headerStack;
+                Grid.SetRow(headerBorder, 0);
+                grid.Children.Add(headerBorder);
+
+                // Contenu de la comparaison
+                var contentBorder = new Border
+                {
+                    Style = (Style)Application.Current.Resources["Card"],
+                    Margin = new Thickness(20)
+                };
+
+                var scrollViewer = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+                };
+
+                var resultTextBox = new TextBox
+                {
+                    Text = FormatComparisonResult(compareResult),
+                    IsReadOnly = true,
+                    TextWrapping = TextWrapping.Wrap,
+                    AcceptsReturn = true,
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                    FontSize = 12,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(15)
+                };
+
+                scrollViewer.Content = resultTextBox;
+                contentBorder.Child = scrollViewer;
+                Grid.SetRow(contentBorder, 1);
+                grid.Children.Add(contentBorder);
+
+                comparisonWindow.Content = grid;
+                comparisonWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                // Fallback en cas d'erreur d'affichage
+                var fallbackMessage = $"🔍 Comparaison de Versions\n\n" +
+                                     $"Document: {_document.Title}\n" +
+                                     $"Version 1: {version1}\n" +
+                                     $"Version 2: {version2}\n\n" +
+                                     $"Résultat de comparaison:\n" +
+                                     $"{FormatComparisonResult(compareResult)}\n\n" +
+                                     $"(Erreur d'affichage avancé: {ex.Message})";
+
+                MessageBox.Show(fallbackMessage, "Résultat de Comparaison", 
+                               MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private string FormatComparisonResult(object compareResult)
+        {
+            try
+            {
+                if (compareResult == null)
+                    return "Aucun résultat de comparaison disponible.";
+
+                // Convertir en JSON formaté pour affichage
+                var json = JsonConvert.SerializeObject(compareResult, Formatting.Indented);
+                
+                // Essayer de parser pour un affichage plus convivial
+                dynamic result = compareResult;
+                var formatted = new StringBuilder();
+                
+                formatted.AppendLine("📊 RÉSULTAT DE LA COMPARAISON");
+                formatted.AppendLine(new string('=', 50));
+                formatted.AppendLine();
+                
+                // Essayer d'extraire des informations structurées
+                try
+                {
+                    if (result.ToString().Contains("diff") || result.ToString().Contains("changes"))
+                    {
+                        formatted.AppendLine("🔍 Différences détectées:");
+                        formatted.AppendLine(json);
+                    }
+                    else if (result.ToString().Contains("identical") || result.ToString().Contains("same"))
+                    {
+                        formatted.AppendLine("✅ Les versions sont identiques.");
+                    }
+                    else
+                    {
+                        formatted.AppendLine("📋 Données de comparaison:");
+                        formatted.AppendLine(json);
+                    }
+                }
+                catch
+                {
+                    // Si l'analyse échoue, afficher le JSON brut
+                    formatted.AppendLine("📋 Données brutes de comparaison:");
+                    formatted.AppendLine(json);
+                }
+                
+                formatted.AppendLine();
+                formatted.AppendLine(new string('=', 50));
+                formatted.AppendLine($"⏰ Comparaison effectuée le {DateTime.Now:dd/MM/yyyy à HH:mm:ss}");
+                
+                return formatted.ToString();
+            }
+            catch (Exception ex)
+            {
+                return $"Erreur lors du formatage du résultat: {ex.Message}\n\nDonnées brutes:\n{compareResult}";
             }
         }
 
