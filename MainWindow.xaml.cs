@@ -557,6 +557,9 @@ namespace TextLabClient
                 DocumentsTreeView.Items.Clear();
                 RepositoryInfoText.Text = "Sélectionnez un repository";
             }
+            
+            // Mettre à jour les boutons de la barre d'outils
+            UpdateToolbarButtons();
         }
 
         private async void LoadDocumentsButton_Click(object sender, RoutedEventArgs e)
@@ -801,6 +804,9 @@ namespace TextLabClient
                     SetStatus($"Repository sélectionné: {repo.Name}");
                 }
             }
+            
+            // Mettre à jour les boutons de la barre d'outils selon la sélection
+            UpdateToolbarButtons();
         }
 
         private void DocumentsTreeView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1232,6 +1238,297 @@ namespace TextLabClient
         }
 
         // Méthode supprimée - info repository maintenant dans le panneau gauche
+
+        // ===== MÉTHODES POUR RAFRAÎCHISSEMENT APRÈS ÉDITION =====
+
+        /// <summary>
+        /// Rafraîchit la liste des documents du repository actuellement sélectionné
+        /// </summary>
+        public async Task RefreshDocumentsAsync()
+        {
+            try
+            {
+                LogDebug("🔄 RefreshDocumentsAsync appelé depuis DocumentDetailsWindow");
+                
+                if (_selectedRepository != null)
+                {
+                    await LoadDocuments();
+                    LogDebug($"✅ Documents rafraîchis pour {_selectedRepository.Name}");
+                }
+                else
+                {
+                    LogDebug("⚠️ Aucun repository sélectionné pour le rafraîchissement");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur dans RefreshDocumentsAsync: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Sélectionne un document spécifique dans l'arbre après mise à jour
+        /// </summary>
+        public void SelectDocumentInTree(string documentId)
+        {
+            try
+            {
+                LogDebug($"🎯 Tentative de sélection du document: {documentId}");
+                
+                // Parcourir l'arbre pour trouver le document
+                var documentItem = FindDocumentInTree(DocumentsTreeView.Items, documentId);
+                
+                if (documentItem != null)
+                {
+                    // Sélectionner l'item dans le TreeView
+                    var container = DocumentsTreeView.ItemContainerGenerator.ContainerFromItem(documentItem) as TreeViewItem;
+                    if (container != null)
+                    {
+                        container.IsSelected = true;
+                        container.BringIntoView();
+                        LogDebug($"✅ Document {documentId} sélectionné dans l'arbre");
+                    }
+                    else
+                    {
+                        LogDebug($"⚠️ Container non trouvé pour document {documentId}");
+                    }
+                }
+                else
+                {
+                    LogDebug($"⚠️ Document {documentId} non trouvé dans l'arbre");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur dans SelectDocumentInTree: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Trouve un document dans l'arbre par son ID
+        /// </summary>
+        private DocumentTreeItem? FindDocumentInTree(System.Collections.IEnumerable items, string documentId)
+        {
+            foreach (DocumentTreeItem item in items)
+            {
+                // Vérifier si c'est le document recherché
+                if (item.Type == "document" && item.Tag is Document doc && doc.Id == documentId)
+                {
+                    return item;
+                }
+                
+                // Rechercher récursivement dans les enfants
+                var found = FindDocumentInTree(item.Children, documentId);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+            return null;
+        }
+
+        // ===== ÉVÉNEMENTS DE LA BARRE D'OUTILS =====
+
+        private void EditDocumentButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selectedDocument = GetSelectedDocument();
+                if (selectedDocument != null)
+                {
+                    LogDebug($"✏️ Édition du document: {selectedDocument.Title}");
+                    
+                    // Ouvrir la fenêtre de détails en mode édition
+                    var detailsWindow = new DocumentDetailsWindow(selectedDocument, _apiService);
+                    detailsWindow.Owner = this;
+                    detailsWindow.ShowDialog();
+                    
+                    // Rafraîchir après fermeture
+                    _ = LoadDocuments();
+                }
+                else
+                {
+                    MessageBox.Show("Veuillez sélectionner un document à éditer.", "Aucun document sélectionné", 
+                                  MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur EditDocumentButton_Click: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'ouverture en édition:\n{ex.Message}", "Erreur", 
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void DeleteDocumentButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selectedDocument = GetSelectedDocument();
+                if (selectedDocument != null)
+                {
+                    LogDebug($"🗑️ Demande de suppression du document: {selectedDocument.Title}");
+                    
+                    var result = MessageBox.Show(
+                        $"Voulez-vous vraiment supprimer le document ?\n\n" +
+                        $"📄 Titre: {selectedDocument.Title}\n" +
+                        $"📁 Repository: {selectedDocument.RepositoryName}\n" +
+                        $"📂 Catégorie: {selectedDocument.CategoryDisplay}\n\n" +
+                        $"⚠️ Cette action effectue une suppression logique.\n" +
+                        $"Le fichier Git ne sera pas supprimé.",
+                        "Confirmer la suppression", 
+                        MessageBoxButton.YesNo, 
+                        MessageBoxImage.Question);
+                    
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        DeleteDocumentButton.IsEnabled = false;
+                        SetStatus($"Suppression du document: {selectedDocument.Title}...");
+                        
+                        var success = await _apiService.DeleteDocumentAsync(selectedDocument.Id);
+                        
+                        if (success)
+                        {
+                            LogDebug($"✅ Document supprimé: {selectedDocument.Title}");
+                            SetStatus($"Document '{selectedDocument.Title}' supprimé avec succès");
+                            
+                            MessageBox.Show($"Document '{selectedDocument.Title}' supprimé avec succès!\n\n" +
+                                          $"Le document a été marqué comme supprimé dans la base de données.\n" +
+                                          $"L'historique Git reste intact.", 
+                                          "Suppression réussie", MessageBoxButton.OK, MessageBoxImage.Information);
+                            
+                            // Rafraîchir la liste
+                            await LoadDocuments();
+                        }
+                        else
+                        {
+                            LogDebug($"❌ Échec suppression: {selectedDocument.Title}");
+                            SetStatus($"Erreur lors de la suppression de '{selectedDocument.Title}'");
+                            MessageBox.Show($"Erreur lors de la suppression du document '{selectedDocument.Title}'.", 
+                                          "Erreur de suppression", MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    }
+                    else
+                    {
+                        SetStatus("Suppression annulée");
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Veuillez sélectionner un document à supprimer.", "Aucun document sélectionné", 
+                                  MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur DeleteDocumentButton_Click: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la suppression:\n{ex.Message}", "Erreur", 
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                DeleteDocumentButton.IsEnabled = true;
+            }
+        }
+
+        private async void SyncRepositoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_selectedRepository != null)
+                {
+                    LogDebug($"🔄 Synchronisation du repository: {_selectedRepository.Name}");
+                    SyncRepositoryButton.IsEnabled = false;
+                    SetStatus($"Synchronisation de {_selectedRepository.Name}...");
+                    
+                    var pullResult = await _adminService.PullRepositoryAsync(_selectedRepository.Id);
+                    
+                    if (pullResult?.Success == true)
+                    {
+                        LogDebug($"✅ Synchronisation réussie: {_selectedRepository.Name}");
+                        SetStatus($"Repository '{_selectedRepository.Name}' synchronisé avec succès");
+                        
+                        var message = $"Repository '{_selectedRepository.Name}' synchronisé!\n\n" +
+                                     $"📥 {pullResult.Changes.CommitsPulled} commits récupérés\n" +
+                                     $"📝 {pullResult.Changes.FilesUpdated} fichiers mis à jour";
+                        
+                        if (pullResult.Changes.Conflicts.Any())
+                        {
+                            message += $"\n⚠️ {pullResult.Changes.Conflicts.Count} conflits détectés";
+                        }
+                        
+                        MessageBox.Show(message, "Synchronisation réussie", 
+                                      MessageBoxButton.OK, MessageBoxImage.Information);
+                        
+                        // Rafraîchir les documents
+                        await LoadDocuments();
+                    }
+                    else
+                    {
+                        LogDebug($"❌ Échec synchronisation: {pullResult?.Error ?? "Erreur inconnue"}");
+                        SetStatus($"Erreur lors de la synchronisation de '{_selectedRepository.Name}'");
+                        
+                        var errorMessage = $"Erreur lors de la synchronisation du repository '{_selectedRepository.Name}'";
+                        if (!string.IsNullOrEmpty(pullResult?.Error))
+                        {
+                            errorMessage += $"\n\nDétail: {pullResult.Error}";
+                        }
+                        
+                        MessageBox.Show(errorMessage, "Erreur de synchronisation", 
+                                      MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Veuillez sélectionner un repository à synchroniser.", "Aucun repository sélectionné", 
+                                  MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"❌ Erreur SyncRepositoryButton_Click: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la synchronisation:\n{ex.Message}", "Erreur", 
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+                SetStatus("Erreur lors de la synchronisation");
+            }
+            finally
+            {
+                SyncRepositoryButton.IsEnabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Récupère le document actuellement sélectionné dans l'arbre
+        /// </summary>
+        private Document? GetSelectedDocument()
+        {
+            if (DocumentsTreeView.SelectedItem is DocumentTreeItem item && 
+                item.Type == "document" && 
+                item.Tag is Document document)
+            {
+                return document;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Met à jour l'état des boutons de la barre d'outils selon la sélection
+        /// </summary>
+        private void UpdateToolbarButtons()
+        {
+            var hasRepository = _selectedRepository != null;
+            var hasSelectedDocument = GetSelectedDocument() != null;
+            
+            // Boutons de document
+            NewDocumentButton.IsEnabled = hasRepository;
+            EditDocumentButton.IsEnabled = hasSelectedDocument;
+            DeleteDocumentButton.IsEnabled = hasSelectedDocument;
+            
+            // Boutons de repository
+            SyncRepositoryButton.IsEnabled = hasRepository;
+            
+            LogDebug($"🔧 Boutons mis à jour - Repository: {hasRepository}, Document: {hasSelectedDocument}");
+        }
 
         protected override void OnClosed(EventArgs e)
         {

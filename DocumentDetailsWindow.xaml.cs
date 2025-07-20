@@ -6,13 +6,15 @@ using System.Windows;
 using System.Windows.Controls;
 using TextLabClient.Models;
 using TextLabClient.Services;
+using System.Windows.Media; // Added for Brushes
+using System.Net.Http; // Added for HttpRequestException
 
 namespace TextLabClient
 {
     public partial class DocumentDetailsWindow : Window
     {
         private readonly TextLabApiService _apiService;
-        private readonly Document _document;
+        private Document _document;
         private DocumentContent? _documentContent;
         private DocumentVersions? _documentVersions;
         
@@ -20,6 +22,15 @@ namespace TextLabClient
         private readonly DocumentVersion? _specificVersion;
         private readonly string? _specificVersionSha;
         private readonly bool _isViewingSpecificVersion;
+
+        // Variables pour le mode édition - SUPPRIMÉES car interface d'édition supprimée
+        // private bool _isEditMode = false;
+        // private string _originalTitle = "";
+        // private string _originalContent = "";
+        // private const string DEFAULT_AUTHOR = "TextLab Client";
+
+        // MÉTHODES D'ÉDITION SUPPRIMÉES - Interface d'édition retirée du XAML
+        // Les boutons SaveButton, EditModeButtons, TitleEditPanel, etc. n'existent plus
 
         // Constructeur original pour la version actuelle
         public DocumentDetailsWindow(Document document, TextLabApiService apiService)
@@ -139,6 +150,27 @@ namespace TextLabClient
             {
                 SetStatus("Chargement des détails complets...");
                 
+                // Recharger les données du document depuis l'API pour avoir les dernières informations
+                if (!_isViewingSpecificVersion)
+                {
+                    await LoggingService.LogDebugAsync($"🔄 Rechargement du document {_document.Id} depuis l'API");
+                    
+                    var freshDocument = await _apiService.GetDocumentAsync(_document.Id);
+                    if (freshDocument != null)
+                    {
+                        // Mettre à jour l'objet document avec les données fraîches
+                        _document = freshDocument;
+                        await LoggingService.LogDebugAsync($"✅ Document rechargé: {_document.Title}, commit: {_document.CurrentCommitSha}");
+                        
+                        // Réinitialiser l'affichage avec les nouvelles données
+                        InitializeDocumentInfo();
+                    }
+                    else
+                    {
+                        await LoggingService.LogDebugAsync($"⚠️ Impossible de recharger le document {_document.Id}");
+                    }
+                }
+                
                 // Charger le contenu
                 await LoadDocumentContent();
                 
@@ -160,10 +192,12 @@ namespace TextLabClient
             try
             {
                 SetStatus("Chargement du contenu...");
+                await LoggingService.LogDebugAsync($"🔄 LoadDocumentContent appelé pour document {_document.Id}");
                 
                 // Choisir la méthode de chargement selon le contexte
                 if (_isViewingSpecificVersion && !string.IsNullOrEmpty(_specificVersionSha))
                 {
+                    await LoggingService.LogDebugAsync($"📋 Chargement contenu version spécifique: {_specificVersionSha}");
                     var doc = await _apiService.GetDocumentWithContentAsync(_document.Id, _specificVersionSha);
                     if (doc != null)
                     {
@@ -176,10 +210,12 @@ namespace TextLabClient
                             RepositoryName = doc.RepositoryName ?? "",
                             FileSizeBytes = doc.FileSizeBytes
                         };
+                        await LoggingService.LogDebugAsync($"✅ Contenu version spécifique chargé: {doc.Content?.Length ?? 0} caractères");
                     }
                 }
                 else
                 {
+                    await LoggingService.LogDebugAsync($"📋 Chargement contenu version actuelle, commit SHA: {_document.CurrentCommitSha}");
                     var doc = await _apiService.GetDocumentWithContentAsync(_document.Id);
                     if (doc != null)
                     {
@@ -192,12 +228,19 @@ namespace TextLabClient
                             RepositoryName = doc.RepositoryName ?? "",
                             FileSizeBytes = doc.FileSizeBytes
                         };
+                        await LoggingService.LogDebugAsync($"✅ Contenu version actuelle chargé: {doc.Content?.Length ?? 0} caractères, SHA: {doc.CurrentCommitSha}");
+                        await LoggingService.LogDebugAsync($"🔍 Premiers 100 caractères: {doc.Content?.Substring(0, Math.Min(100, doc.Content?.Length ?? 0))}");
+                    }
+                    else
+                    {
+                        await LoggingService.LogDebugAsync($"❌ Aucun contenu retourné par l'API pour document {_document.Id}");
                     }
                 }
                 
                 if (_documentContent != null)
                 {
                     // Afficher le contenu
+                    await LoggingService.LogDebugAsync($"📝 Affichage du contenu dans TextBox: {_documentContent.Content?.Length ?? 0} caractères");
                     DocumentContentTextBox.Text = _documentContent.Content;
                     ContentSizeText.Text = $"{_documentContent.FileSizeBytes} octets";
                     
@@ -418,6 +461,212 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        // Méthodes pour le mode édition - SUPPRIMÉES - Interface d'édition retirée du XAML
+        // private void EditButton_Click(object sender, RoutedEventArgs e)
+        // {
+        //     try
+        //     {
+        //         // Sauvegarder les valeurs originales
+        //         _originalTitle = _document.Title ?? "";
+        //         _originalContent = DocumentContentTextBox.Text ?? "";
+                
+        //         // Basculer en mode édition
+        //         SetEditMode(true);
+                
+        //         // Mode édition activé (plus de champ titre séparé, édition du contenu seulement)
+                
+        //         SetStatus("Mode édition activé");
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         SetStatus($"Erreur lors de l'activation du mode édition: {ex.Message}");
+        //         MessageBox.Show($"Erreur lors de l'activation du mode édition:\n{ex.Message}", 
+        //                       "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+        //     }
+        // }
+
+        // private async void SaveButton_Click(object sender, RoutedEventArgs e)
+        // {
+        //     try
+        //     {
+        //         SaveButton.IsEnabled = false;
+        //         SetStatus("Sauvegarde en cours...");
+
+        //         var newTitle = _originalTitle; // Pas d'édition de titre pour l'instant
+        //         var newContent = DocumentContentTextBox.Text;
+
+        //         // Vérifications
+        //         if (string.IsNullOrEmpty(newTitle))
+        //         {
+        //             MessageBox.Show("Le titre ne peut pas être vide.", "Validation", MessageBoxButton.OK, MessageBoxImage.Warning);
+        //             SaveButton.IsEnabled = true;
+        //             return;
+        //         }
+
+        //         if (string.IsNullOrEmpty(newContent))
+        //         {
+        //             MessageBox.Show("Le contenu ne peut pas être vide.", "Validation", MessageBoxButton.OK, MessageBoxImage.Warning);
+        //             SaveButton.IsEnabled = true;
+        //             return;
+        //         }
+
+        //         // Vérifier s'il y a eu des modifications
+        //         bool titleChanged = newTitle != _originalTitle;
+        //         bool contentChanged = newContent != _originalContent;
+
+        //         if (!titleChanged && !contentChanged)
+        //         {
+        //             MessageBox.Show("Aucune modification détectée.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+        //             CancelEditButton_Click(sender, e);
+        //             return;
+        //         }
+
+        //         // Tenter de mettre à jour via l'API
+        //         try 
+        //         {
+        //             var updatedDocument = await _apiService.UpdateDocumentAsync(
+        //                 _document.Id,
+        //                 DEFAULT_AUTHOR,
+        //                 titleChanged ? newTitle : null,
+        //                 contentChanged ? newContent : null
+        //             );
+
+        //             if (updatedDocument != null)
+        //             {
+        //                 // Mettre à jour l'objet document local
+        //                 _document = updatedDocument;
+                        
+        //                 // Sortir du mode édition
+        //                 SetEditMode(false);
+                        
+        //                 // Recharger complètement les détails du document avec les nouvelles données
+        //                 await LoadDocumentDetailsAsync();
+                        
+        //                 // FORCER le rechargement du contenu depuis l'API avec la nouvelle version
+        //                 _documentContent = null; // Réinitialiser pour forcer le rechargement
+        //                 await LoadDocumentContent();
+                        
+        //                 // Notifier la fenêtre parent (MainWindow) pour rafraîchir l'arbre et les versions
+        //                 if (Owner is MainWindow mainWindow)
+        //                 {
+        //                     // Rafraîchir l'arbre des documents pour mettre à jour les métadonnées
+        //                     await mainWindow.RefreshDocumentsAsync();
+                            
+        //                     // Re-sélectionner le document modifié dans l'arbre pour qu'il reste actif
+        //                     mainWindow.SelectDocumentInTree(_document.Id);
+        //                 }
+                        
+        //                 // Mettre à jour le titre de la fenêtre avec le nouveau titre du document
+        //                 DocumentTitleText.Text = _document.Title ?? "Document sans titre";
+        //                 Title = $"Détails du Document - {_document.Title}";
+                        
+        //                 SetStatus($"Document mis à jour avec succès! Nouveau commit: {updatedDocument.CurrentCommitSha}");
+        //                 MessageBox.Show($"Document mis à jour avec succès!\n\nNouveau commit Git: {updatedDocument.CurrentCommitSha?.Substring(0, 8)}", 
+        //                               "Succès", MessageBoxButton.OK, MessageBoxImage.Information);
+        //             }
+        //             else
+        //             {
+        //                 throw new Exception("La réponse de l'API est nulle");
+        //             }
+        //         }
+        //         catch (HttpRequestException httpEx) when (httpEx.Message.Contains("InternalServerError") || httpEx.Message.Contains("GitHubAPIService"))
+        //         {
+        //             // L'endpoint UPDATE n'est pas encore implémenté côté serveur
+        //             SetStatus("⚠️ Fonctionnalité d'édition temporairement indisponible");
+                    
+        //             var result = MessageBox.Show(
+        //                 "🔧 Fonctionnalité temporairement indisponible\n\n" +
+        //                 "L'édition de documents n'est pas encore fully implémentée côté serveur.\n" +
+        //                 "L'équipe technique travaille sur cette fonctionnalité.\n\n" +
+        //                 "📋 Voulez-vous copier vos modifications dans le presse-papier?\n" +
+        //                 "Vous pourrez les coller manuellement dans GitHub.",
+        //                 "Fonctionnalité en développement", 
+        //                 MessageBoxButton.YesNo, 
+        //                 MessageBoxImage.Information);
+                    
+        //             if (result == MessageBoxResult.Yes)
+        //             {
+        //                 // Copier les modifications dans le presse-papier
+        //                 var modifications = $"=== MODIFICATIONS DOCUMENT ===\n\n";
+        //                 modifications += $"📄 Titre: {newTitle}\n\n";
+        //                 modifications += $"📝 Contenu:\n{newContent}\n\n";
+        //                 modifications += $"🆔 ID Document: {_document.Id}\n";
+        //                 modifications += $"📁 Chemin Git: {_document.GitPath}\n";
+        //                 modifications += $"🔗 Repository: {_document.RepositoryName}\n";
+                        
+        //                 Clipboard.SetText(modifications);
+                        
+        //                 MessageBox.Show(
+        //                     "📋 Modifications copiées dans le presse-papier!\n\n" +
+        //                     "Vous pouvez maintenant ouvrir le document sur GitHub\n" +
+        //                     "et coller vos modifications manuellement.",
+        //                     "Copié", MessageBoxButton.OK, MessageBoxImage.Information);
+        //             }
+                    
+        //             // Rester en mode édition pour permettre d'autres actions
+        //         }
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         SetStatus($"Erreur lors de la sauvegarde: {ex.Message}");
+        //         MessageBox.Show($"Erreur lors de la sauvegarde:\n{ex.Message}", 
+        //                       "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+        //     }
+        //     finally
+        //     {
+        //         SaveButton.IsEnabled = true;
+        //     }
+        // }
+
+        // private void CancelEditButton_Click(object sender, RoutedEventArgs e)
+        // {
+        //     try
+        //     {
+        //         // Restaurer les valeurs originales
+        //         DocumentContentTextBox.Text = _originalContent;
+                
+        //         // Sortir du mode édition
+        //         SetEditMode(false);
+                
+        //         SetStatus("Édition annulée");
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         SetStatus($"Erreur lors de l'annulation: {ex.Message}");
+        //     }
+        // }
+
+        // private void SetEditMode(bool editMode)
+        // {
+        //     _isEditMode = editMode;
+            
+        //     if (editMode)
+        //     {
+        //         // Mode édition
+        //         ReadModeButtons.Visibility = Visibility.Collapsed;
+        //         EditModeButtons.Visibility = Visibility.Visible;
+        //         TitleEditPanel.Visibility = Visibility.Visible;
+        //         EditModeIndicator.Visibility = Visibility.Visible;
+                
+        //         DocumentContentTextBox.IsReadOnly = false;
+        //         DocumentContentTextBox.Background = Brushes.White;
+        //         DocumentContentTextBox.BorderThickness = new Thickness(1);
+        //         DocumentContentTextBox.BorderBrush = Brushes.LightGray;
+        //     }
+        //     else
+        //     {
+        //         // Mode lecture
+        //         ReadModeButtons.Visibility = Visibility.Visible;
+        //         EditModeButtons.Visibility = Visibility.Collapsed;
+        //         TitleEditPanel.Visibility = Visibility.Collapsed;
+        //         EditModeIndicator.Visibility = Visibility.Collapsed;
+                
+        //         DocumentContentTextBox.IsReadOnly = true;
+        //         DocumentContentTextBox.Background = Brushes.Transparent;
+        //         DocumentContentTextBox.BorderThickness = new Thickness(0);
+        //     }
+        // }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {

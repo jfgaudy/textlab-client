@@ -223,18 +223,18 @@
                                            Click="NewDocumentButton_Click" IsEnabled="False"
                                            Style="{StaticResource SuccessButton}" Height="30" Padding="8,4"/>
                                     <Button x:Name="EditDocumentButton" Content="✏️ Éditer" 
-                                           IsEnabled="False" Height="30" Padding="8,4" Margin="5,0,0,0"
-                                           ToolTip="Fonctionnalité non disponible dans l'API TextLab"/>
+                                           Click="EditDocumentButton_Click" IsEnabled="False" Height="30" Padding="8,4" Margin="5,0,0,0"
+                                           ToolTip="Ouvrir le document sélectionné en mode édition"/>
                                     <Button x:Name="DeleteDocumentButton" Content="🗑️ Suppr." 
-                                           IsEnabled="False" Height="30" Padding="8,4" Margin="5,0,0,0"
+                                           Click="DeleteDocumentButton_Click" IsEnabled="False" Height="30" Padding="8,4" Margin="5,0,0,0"
                                            Style="{StaticResource DangerButton}"
-                                           ToolTip="Fonctionnalité non disponible dans l'API TextLab"/>
+                                           ToolTip="Supprimer le document sélectionné"/>
                                 </StackPanel>
                                 
                                 <!-- Repository Actions -->
                                 <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
                                     <Button x:Name="SyncRepositoryButton" Content="🔄 Sync" 
-                                           IsEnabled="False" Height="30" Padding="8,4"
+                                           Click="SyncRepositoryButton_Click" IsEnabled="False" Height="30" Padding="8,4"
                                            ToolTip="Synchroniser avec le repository distant"/>
                                     <Button x:Name="RefreshButton" Content="🔃 Actualiser" 
                                            Click="RefreshButton_Click" Height="30" Padding="8,4" Margin="5,0,0,0"

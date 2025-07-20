@@ -358,7 +358,173 @@ namespace TextLabClient.Services
             }
         }
 
-        // SUPPRIMÉ: DeleteDocumentAsync - Endpoint non disponible dans l'API
+        /// <summary>
+        /// Met à jour un document existant avec création automatique d'une nouvelle version Git
+        /// </summary>
+        public async Task<Document?> UpdateDocumentAsync(string documentId, string author, string? title = null, string? content = null, string? category = null, string? visibility = null)
+        {
+            try
+            {
+                var updateData = new Dictionary<string, object?>();
+                
+                // Ajouter seulement les champs modifiés
+                if (!string.IsNullOrEmpty(title))
+                    updateData["title"] = title;
+                if (!string.IsNullOrEmpty(content))
+                    updateData["content"] = content;
+                if (!string.IsNullOrEmpty(category))
+                    updateData["category"] = category;
+                if (!string.IsNullOrEmpty(visibility))
+                    updateData["visibility"] = visibility;
+
+                var json = JsonConvert.SerializeObject(updateData);
+                var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+                System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - ID: {documentId}, Auteur: {author}");
+                System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - Données: {json}");
+
+                var response = await _httpClient.PutAsync($"{_baseUrl}/api/v1/documents/{documentId}?author={Uri.EscapeDataString(author)}", httpContent);
+                
+                var responseContent = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - Status: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - Response: {responseContent}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var updatedDocument = JsonConvert.DeserializeObject<Document>(responseContent);
+                    if (updatedDocument != null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"✅ Document mis à jour: {updatedDocument.Title}, Nouveau commit: {updatedDocument.CurrentCommitSha}");
+                    }
+                    return updatedDocument;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur mise à jour document: {response.StatusCode} - {responseContent}");
+                    throw new HttpRequestException($"Erreur lors de la mise à jour du document: {response.StatusCode} - {responseContent}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Exception UpdateDocumentAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Supprime un document (suppression logique)
+        /// </summary>
+        public async Task<bool> DeleteDocumentAsync(string documentId)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"🗑️ DeleteDocument - ID: {documentId}");
+
+                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/v1/documents/{documentId}");
+                
+                var responseContent = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🗑️ DeleteDocument - Status: {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($"🗑️ DeleteDocument - Response: {responseContent}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"✅ Document supprimé (logique): {documentId}");
+                    return true;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur suppression document: {response.StatusCode} - {responseContent}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Exception DeleteDocumentAsync: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Compare deux versions d'un document
+        /// </summary>
+        public async Task<object?> CompareDocumentVersionsAsync(string documentId, string version1, string version2)
+        {
+            try
+            {
+                var compareRequest = new
+                {
+                    version1 = version1,
+                    version2 = version2
+                };
+
+                var json = JsonConvert.SerializeObject(compareRequest);
+                var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+                System.Diagnostics.Debug.WriteLine($"🔍 CompareVersions - ID: {documentId}, v1: {version1}, v2: {version2}");
+
+                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions/compare", httpContent);
+                
+                var responseContent = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"🔍 CompareVersions - Status: {response.StatusCode}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return JsonConvert.DeserializeObject<object>(responseContent);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur comparaison versions: {response.StatusCode} - {responseContent}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Exception CompareDocumentVersionsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Restaure une version antérieure d'un document
+        /// </summary>
+        public async Task<object?> RestoreDocumentVersionAsync(string documentId, string version, string author, string? reason = null)
+        {
+            try
+            {
+                var restoreRequest = new
+                {
+                    version = version,
+                    author = author,
+                    reason = reason ?? $"Restauration de la version {version}"
+                };
+
+                var json = JsonConvert.SerializeObject(restoreRequest);
+                var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+                System.Diagnostics.Debug.WriteLine($"⏮️ RestoreVersion - ID: {documentId}, Version: {version}, Auteur: {author}");
+
+                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions/restore", httpContent);
+                
+                var responseContent = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"⏮️ RestoreVersion - Status: {response.StatusCode}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"✅ Version restaurée: {documentId} vers {version}");
+                    return JsonConvert.DeserializeObject<object>(responseContent);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur restauration version: {response.StatusCode} - {responseContent}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Exception RestoreDocumentVersionAsync: {ex.Message}");
+                return null;
+            }
+        }
 
         public async Task<Document?> GetDocumentWithContentAsync(string documentId, string? version = null)
         {
@@ -676,32 +842,6 @@ namespace TextLabClient.Services
 
         /// <summary>
         /// Supprime un document avec support d'archivage
-        /// </summary>
-        public async Task<object?> DeleteDocumentAsync(string documentId, string author, bool softDelete = false)
-        {
-            try
-            {
-                var url = $"{_baseUrl}/api/v1/documents/{documentId}?author={Uri.EscapeDataString(author)}&soft_delete={softDelete}";
-                var response = await _httpClient.DeleteAsync(url);
-                response.EnsureSuccessStatusCode();
-
-                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                {
-                    return new { Success = true, Message = "Document supprimé avec succès" };
-                }
-
-                var content = await response.Content.ReadAsStringAsync();
-                return JsonConvert.DeserializeObject<object>(content);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"❌ Erreur DeleteDocumentAsync: {ex.Message}");
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// Archive un document (suppression logique)
         /// </summary>
         public async Task<object?> ArchiveDocumentAsync(string documentId, string author, string? reason = null)
         {
