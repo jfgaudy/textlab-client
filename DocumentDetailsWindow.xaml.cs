@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using TextLabClient.Models;
@@ -667,6 +668,318 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
         //         DocumentContentTextBox.BorderThickness = new Thickness(0);
         //     }
         // }
+
+        // ===== GESTION DES VERSIONS =====
+
+        private void VersionsDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
+                bool hasSelection = selectedVersion != null;
+                
+                // Activer/désactiver les boutons selon la sélection
+                ViewVersionButton.IsEnabled = hasSelection;
+                RestoreVersionButton.IsEnabled = hasSelection && !_isViewingSpecificVersion;
+                CompareVersionButton.IsEnabled = hasSelection;
+                CopyVersionButton.IsEnabled = hasSelection;
+                
+                // Afficher les informations de la version sélectionnée
+                if (hasSelection && selectedVersion != null)
+                {
+                    SelectedVersionInfo.Visibility = Visibility.Visible;
+                    SelectedVersionText.Text = selectedVersion.Version;
+                    SelectedVersionAuthorText.Text = selectedVersion.Author ?? "Inconnu";
+                    SelectedVersionMessageText.Text = selectedVersion.Message ?? "Aucun message";
+                }
+                else
+                {
+                    SelectedVersionInfo.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de la sélection: {ex.Message}");
+            }
+        }
+
+        private async void ViewVersionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ViewSelectedVersion();
+        }
+
+        private async void ViewVersionMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await ViewSelectedVersion();
+        }
+
+        private async Task ViewSelectedVersion()
+        {
+            try
+            {
+                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
+                if (selectedVersion == null)
+                {
+                    MessageBox.Show("Veuillez sélectionner une version à visualiser.", 
+                                   "Aucune sélection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                SetStatus("Ouverture de la version...");
+                
+                // Ouvrir une nouvelle fenêtre avec cette version spécifique
+                var versionWindow = new DocumentDetailsWindow(_document, _apiService, selectedVersion, selectedVersion.CommitSha ?? "");
+                versionWindow.Show();
+                
+                SetStatus($"Version {selectedVersion.Version} ouverte dans une nouvelle fenêtre");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de l'ouverture de la version: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'ouverture de la version:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void RestoreVersionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RestoreSelectedVersion();
+        }
+
+        private async void RestoreVersionMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await RestoreSelectedVersion();
+        }
+
+        private async Task RestoreSelectedVersion()
+        {
+            try
+            {
+                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
+                if (selectedVersion == null)
+                {
+                    MessageBox.Show("Veuillez sélectionner une version à restaurer.", 
+                                   "Aucune sélection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // Confirmation de restauration
+                var result = MessageBox.Show(
+                    $"⏮️ Confirmer la restauration\n\n" +
+                    $"Version: {selectedVersion.Version}\n" +
+                    $"Auteur: {selectedVersion.Author}\n" +
+                    $"Date: {selectedVersion.Date:dd/MM/yyyy HH:mm}\n" +
+                    $"Message: {selectedVersion.Message}\n\n" +
+                    $"Cette action créera une nouvelle version avec le contenu de la version sélectionnée.\n" +
+                    $"L'historique sera préservé.\n\n" +
+                    $"Continuer?",
+                    "Confirmer la restauration", 
+                    MessageBoxButton.YesNo, 
+                    MessageBoxImage.Question);
+
+                if (result != MessageBoxResult.Yes)
+                    return;
+
+                SetStatus("Restauration en cours...");
+                RestoreVersionButton.IsEnabled = false;
+
+                // Effectuer la restauration
+                var commitSha = selectedVersion.CommitSha ?? selectedVersion.Version;
+                var restoreResult = await _apiService.RestoreDocumentVersionAsync(
+                    _document.Id, 
+                    commitSha, 
+                    "TextLab Client User",
+                    $"Restauration de la version {selectedVersion.Version}"
+                );
+
+                if (restoreResult != null)
+                {
+                    SetStatus("Version restaurée avec succès!");
+                    
+                    MessageBox.Show(
+                        $"✅ Version restaurée avec succès!\n\n" +
+                        $"Une nouvelle version a été créée avec le contenu de la version {selectedVersion.Version}.\n" +
+                        $"Le document va maintenant se recharger avec la nouvelle version.",
+                        "Restauration réussie", 
+                        MessageBoxButton.OK, 
+                        MessageBoxImage.Information);
+
+                    // Recharger le document et les versions
+                    await LoadDocumentDetailsAsync();
+                }
+                else
+                {
+                    throw new Exception("La restauration a échoué - aucune donnée retournée");
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de la restauration: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la restauration:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                RestoreVersionButton.IsEnabled = true;
+            }
+        }
+
+        private async void CompareVersionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await CompareSelectedVersion();
+        }
+
+        private async void CompareVersionMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await CompareSelectedVersion();
+        }
+
+        private async Task CompareSelectedVersion()
+        {
+            try
+            {
+                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
+                if (selectedVersion == null)
+                {
+                    MessageBox.Show("Veuillez sélectionner une version à comparer.", 
+                                   "Aucune sélection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                SetStatus("Comparaison en cours...");
+                CompareVersionButton.IsEnabled = false;
+
+                // Pour l'instant, on affiche les informations de base
+                // TODO: Implémenter une vraie comparaison diff si l'API le supporte
+                var currentVersion = _document.CurrentCommitSha ?? "HEAD";
+                var compareVersion = selectedVersion.CommitSha ?? selectedVersion.Version;
+
+                var message = $"🔍 Comparaison de versions\n\n" +
+                             $"Version actuelle: {currentVersion}\n" +
+                             $"Version sélectionnée: {selectedVersion.Version}\n" +
+                             $"Auteur: {selectedVersion.Author}\n" +
+                             $"Date: {selectedVersion.Date:dd/MM/yyyy HH:mm}\n" +
+                             $"Message: {selectedVersion.Message}\n\n" +
+                             $"Fonctionnalité de comparaison détaillée en développement.\n" +
+                             $"Utilisez 'Voir' pour ouvrir la version dans une nouvelle fenêtre.";
+
+                MessageBox.Show(message, "Comparaison de versions", 
+                               MessageBoxButton.OK, MessageBoxImage.Information);
+
+                SetStatus("Informations de comparaison affichées");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de la comparaison: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la comparaison:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                CompareVersionButton.IsEnabled = true;
+            }
+        }
+
+        private async void CopyVersionButton_Click(object sender, RoutedEventArgs e)
+        {
+            await CopySelectedVersionContent();
+        }
+
+        private async void CopyVersionMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            await CopySelectedVersionContent();
+        }
+
+        private async Task CopySelectedVersionContent()
+        {
+            try
+            {
+                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
+                if (selectedVersion == null)
+                {
+                    MessageBox.Show("Veuillez sélectionner une version à copier.", 
+                                   "Aucune sélection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                SetStatus("Récupération du contenu...");
+                CopyVersionButton.IsEnabled = false;
+
+                // Récupérer le contenu de cette version
+                var versionContent = await _apiService.GetDocumentContentVersionAsync(_document.Id, selectedVersion.CommitSha ?? selectedVersion.Version);
+                
+                if (versionContent?.Content != null)
+                {
+                    System.Windows.Clipboard.SetText(versionContent.Content);
+                    
+                    SetStatus($"Contenu de la version {selectedVersion.Version} copié");
+                    MessageBox.Show(
+                        $"📋 Contenu copié!\n\n" +
+                        $"Le contenu de la version {selectedVersion.Version} a été copié dans le presse-papier.\n" +
+                        $"Taille: {versionContent.Content.Length} caractères",
+                        "Contenu copié", 
+                        MessageBoxButton.OK, 
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    throw new Exception("Impossible de récupérer le contenu de cette version");
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de la copie: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la copie du contenu:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                CopyVersionButton.IsEnabled = true;
+            }
+        }
+
+        private async void ViewOnGitHubMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
+                if (selectedVersion == null)
+                {
+                    MessageBox.Show("Veuillez sélectionner une version à voir sur GitHub.", 
+                                   "Aucune sélection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // Construire l'URL GitHub pour cette version spécifique
+                var commitSha = selectedVersion.CommitSha;
+                if (!string.IsNullOrEmpty(commitSha) && !string.IsNullOrEmpty(_document.GitPath))
+                {
+                    // Format: https://github.com/owner/repo/blob/commitsha/path
+                    var baseUrl = "https://github.com/jfgaudy"; // TODO: Récupérer depuis la config du repository
+                    var repoName = _document.RepositoryName ?? "gaudylab"; // TODO: Améliorer la détection
+                    var githubUrl = $"{baseUrl}/{repoName}/blob/{commitSha}/{_document.GitPath}";
+                    
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = githubUrl,
+                        UseShellExecute = true
+                    });
+                    
+                    SetStatus($"Version {selectedVersion.Version} ouverte sur GitHub");
+                }
+                else
+                {
+                    MessageBox.Show("Informations insuffisantes pour ouvrir cette version sur GitHub.", 
+                                   "Informations manquantes", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de l'ouverture GitHub: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'ouverture sur GitHub:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {

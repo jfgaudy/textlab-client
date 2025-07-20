@@ -249,24 +249,58 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     
                     <!-- Toolbar moderne -->
                     <Border Grid.Row="0" Style="{StaticResource Card}" Margin="20,20,20,10">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="📜 Historique des Versions" FontSize="16" FontWeight="Bold" 
-                                      Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Name="VersionCountText" Text="" VerticalAlignment="Center" 
-                                      Margin="15,0,0,0" FontSize="12" Foreground="Gray"/>
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="📜 Historique des Versions" FontSize="16" FontWeight="Bold" 
+                                          Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Name="VersionCountText" Text="" VerticalAlignment="Center" 
+                                          Margin="15,0,0,0" FontSize="12" Foreground="Gray"/>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Name="ViewVersionButton" Content="👁️ Voir" 
+                                       Style="{StaticResource SecondaryButton}" Click="ViewVersionButton_Click" 
+                                       IsEnabled="False" Margin="5,0"/>
+                                <Button Name="RestoreVersionButton" Content="⏮️ Restaurer" 
+                                       Style="{StaticResource ModernButton}" Click="RestoreVersionButton_Click" 
+                                       IsEnabled="False" Margin="5,0"/>
+                                <Button Name="CompareVersionButton" Content="🔍 Comparer" 
+                                       Style="{StaticResource SecondaryButton}" Click="CompareVersionButton_Click" 
+                                       IsEnabled="False" Margin="5,0"/>
+                                <Button Name="CopyVersionButton" Content="📋 Copier" 
+                                       Style="{StaticResource SecondaryButton}" Click="CopyVersionButton_Click" 
+                                       IsEnabled="False" Margin="5,0"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
                     
                     <!-- DataGrid moderne -->
-                    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="20,10,20,20">
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Margin="20,10,20,10">
                         <DataGrid Name="VersionsDataGrid" AutoGenerateColumns="False" IsReadOnly="True" 
                                  Background="Transparent" BorderThickness="0" GridLinesVisibility="Horizontal"
                                  RowBackground="White" AlternatingRowBackground="#FAFAFA"
-                                 HeadersVisibility="Column">
+                                 HeadersVisibility="Column" SelectionChanged="VersionsDataGrid_SelectionChanged">
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="👁️ Voir cette version" Click="ViewVersionMenuItem_Click"/>
+                                    <MenuItem Header="⏮️ Restaurer cette version" Click="RestoreVersionMenuItem_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="🔍 Comparer avec actuelle" Click="CompareVersionMenuItem_Click"/>
+                                    <MenuItem Header="📋 Copier le contenu" Click="CopyVersionMenuItem_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="🌐 Voir sur GitHub" Click="ViewOnGitHubMenuItem_Click"/>
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="📌 Version" Binding="{Binding Version}" Width="120">
                                     <DataGridTextColumn.HeaderStyle>
@@ -335,6 +369,37 @@
                                 </DataGridTextColumn>
                             </DataGrid.Columns>
                         </DataGrid>
+                    </Border>
+                    
+                    <!-- Zone d'informations sur la version sélectionnée -->
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="20,10,20,20">
+                        <StackPanel Name="SelectedVersionInfo" Visibility="Collapsed">
+                            <TextBlock Text="📋 Version Sélectionnée" FontSize="14" FontWeight="Bold" 
+                                      Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,10"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <TextBlock Grid.Column="0" Text="Version:" FontWeight="SemiBold" Margin="0,0,10,0"/>
+                                <TextBlock Grid.Column="1" Name="SelectedVersionText" Text="-" Margin="0,0,20,0"/>
+                                
+                                <TextBlock Grid.Column="2" Text="Auteur:" FontWeight="SemiBold" Margin="0,0,10,0"/>
+                                <TextBlock Grid.Column="3" Name="SelectedVersionAuthorText" Text="-"/>
+                            </Grid>
+                            <Grid Margin="0,5,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <TextBlock Grid.Column="0" Text="Message:" FontWeight="SemiBold" Margin="0,0,10,0"/>
+                                <TextBlock Grid.Column="1" Name="SelectedVersionMessageText" Text="-" TextWrapping="Wrap"/>
+                            </Grid>
+                        </StackPanel>
                     </Border>
                 </Grid>
             </TabItem>

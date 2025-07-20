@@ -125,7 +125,7 @@
                                 Text="https://textlab-api.onrender.com" Margin="0,0,15,0"/>
                         
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
-                            <Button Name="TestConnectionButton" Content="🔍 Tester" 
+                            <Button Name="TestConnectionButton" Content="🔗 Connecter" 
                                    Click="TestConnectionButton_Click" Margin="0,0,10,0"/>
                             <Button Name="TestInitButton" Content="⚙️ Diagnostics"
                                    Click="TestInitButton_Click" Margin="0,0,15,0"/>
