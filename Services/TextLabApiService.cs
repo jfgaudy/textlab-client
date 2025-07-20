@@ -831,6 +831,83 @@ namespace TextLabClient.Services
             }
         }
 
+        /// <summary>
+        /// Récupère la configuration complète d'un repository incluant la racine des documents
+        /// </summary>
+        public async Task<string> GetRepositoryDocumentsRootAsync(string repositoryId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/admin/repositories/{repositoryId}/config");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    System.Diagnostics.Debug.WriteLine($"🔍 GetRepositoryConfig Response: {content}");
+                    
+                    var configResponse = JsonConvert.DeserializeObject<dynamic>(content);
+                    var rootDocuments = configResponse?.config?.root_documents?.ToString() ?? "documents/";
+                    
+                    System.Diagnostics.Debug.WriteLine($"✅ Repository {repositoryId}, RootDocuments: '{rootDocuments}'");
+                    return rootDocuments;
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Erreur récupération config repository: {response.StatusCode}");
+                    return "documents/"; // Fallback
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Exception GetRepositoryDocumentsRootAsync: {ex.Message}");
+                return "documents/"; // Fallback
+            }
+        }
+
+        /// <summary>
+        /// Construit l'URL GitHub complète en tenant compte de la racine configurable
+        /// </summary>
+        public async Task<string?> BuildGitHubUrlAsync(Repository repository, string gitPath)
+        {
+            try
+            {
+                // Récupérer la racine des documents depuis la configuration
+                var documentsRoot = await GetRepositoryDocumentsRootAsync(repository.Id);
+                
+                // S'assurer que la racine se termine par /
+                if (!documentsRoot.EndsWith("/"))
+                {
+                    documentsRoot += "/";
+                }
+                
+                // Construire l'URL GitHub complète
+                var githubUrl = "";
+                
+                if (repository.Name.ToLower() == "gaudylab")
+                {
+                    githubUrl = $"https://github.com/jfgaudy/gaudylab/blob/main/{documentsRoot}{gitPath}";
+                }
+                else if (repository.Name.ToLower().Contains("pac"))
+                {
+                    githubUrl = $"https://github.com/jfgaudy/PAC_Repo/blob/main/{documentsRoot}{gitPath}";
+                }
+                else
+                {
+                    githubUrl = $"https://github.com/jfgaudy/{repository.Name}/blob/main/{documentsRoot}{gitPath}";
+                }
+                
+                System.Diagnostics.Debug.WriteLine($"🔗 URL GitHub construite: {githubUrl}");
+                System.Diagnostics.Debug.WriteLine($"📁 Racine utilisée: {documentsRoot}");
+                
+                return githubUrl;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur construction URL GitHub: {ex.Message}");
+                return null;
+            }
+        }
+
         public void Dispose()
         {
             // HttpClient statique, pas de dispose nécessaire

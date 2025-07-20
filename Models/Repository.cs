@@ -23,6 +23,13 @@ namespace TextLabClient.Models
         public bool HasCredentials { get; set; }
         public DateTime? LastPullDate { get; set; }
         
+        // NOUVEAUTÉ : Racine configurable des documents
+        [JsonProperty("root_documents")]
+        public string? RootDocuments { get; set; }
+        
+        // Propriété pour obtenir la racine avec fallback
+        public string DocumentsRoot => RootDocuments ?? "documents/";
+        
         // Propriétés pour l'interface utilisateur
         public string DisplayName => !string.IsNullOrEmpty(Name) ? Name : LocalPath ?? RemoteUrl ?? "Repository";
         public string TypeDisplay => Type switch

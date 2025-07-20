@@ -368,38 +368,41 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             }
         }
 
-        private void OpenInBrowserButton_Click(object sender, RoutedEventArgs e)
+        private async void OpenInBrowserButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                // Construire l'URL GitHub basée sur les informations du document
+                // Construire l'URL GitHub avec la racine configurable
                 if (!string.IsNullOrEmpty(_document.GitPath) && !string.IsNullOrEmpty(_document.RepositoryName))
                 {
-                    // Construire l'URL GitHub selon le repository
-                    var githubUrl = "";
+                    SetStatus("Construction de l'URL GitHub avec racine configurable...");
                     
-                    if (_document.RepositoryName.ToLower() == "gaudylab")
+                    // Créer un objet Repository temporaire pour la construction d'URL
+                    var repository = new Repository
                     {
-                        githubUrl = $"https://github.com/jfgaudy/gaudylab/blob/main/{_document.GitPath}";
-                    }
-                    else if (_document.RepositoryName.ToLower().Contains("pac"))
+                        Id = _document.RepositoryId,
+                        Name = _document.RepositoryName
+                    };
+                    
+                    // Utiliser la nouvelle méthode qui tient compte de la racine configurable
+                    var githubUrl = await _apiService.BuildGitHubUrlAsync(repository, _document.GitPath);
+                    
+                    if (!string.IsNullOrEmpty(githubUrl))
                     {
-                        // Adapter selon le repository PAC_Repo
-                        githubUrl = $"https://github.com/jfgaudy/PAC_Repo/blob/main/{_document.GitPath}";
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = githubUrl,
+                            UseShellExecute = true
+                        });
+                        
+                        SetStatus($"Ouverture GitHub: {_document.RepositoryName}/{_document.GitPath}");
                     }
                     else
                     {
-                        // Repository générique
-                        githubUrl = $"https://github.com/jfgaudy/{_document.RepositoryName}/blob/main/{_document.GitPath}";
+                        SetStatus("Erreur lors de la construction de l'URL GitHub");
+                        MessageBox.Show("Impossible de construire l'URL GitHub. Veuillez vérifier la configuration du repository.", 
+                                      "Erreur", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
-                    
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = githubUrl,
-                        UseShellExecute = true
-                    });
-                    
-                    SetStatus($"Ouverture GitHub: {_document.RepositoryName}/{_document.GitPath}");
                 }
                 else
                 {
