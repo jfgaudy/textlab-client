@@ -678,22 +678,31 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
         {
             try
             {
-                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
-                bool hasSelection = selectedVersion != null;
+                var selectedVersions = VersionsDataGrid.SelectedItems.Cast<DocumentVersion>().ToList();
+                bool hasOneSelection = selectedVersions.Count == 1;
+                bool hasTwoSelections = selectedVersions.Count == 2;
                 
                 // Activer/désactiver les boutons selon la sélection
-                ViewVersionButton.IsEnabled = hasSelection;
-                RestoreVersionButton.IsEnabled = hasSelection && !_isViewingSpecificVersion;
-                CompareVersionButton.IsEnabled = hasSelection;
-                CopyVersionButton.IsEnabled = hasSelection;
+                ViewVersionButton.IsEnabled = hasOneSelection;
+                RestoreVersionButton.IsEnabled = hasOneSelection && !_isViewingSpecificVersion;
+                CompareVersionButton.IsEnabled = hasTwoSelections; // Maintenant nécessite 2 sélections
+                CopyVersionButton.IsEnabled = hasOneSelection;
                 
                 // Afficher les informations de la version sélectionnée
-                if (hasSelection && selectedVersion != null)
+                if (hasOneSelection)
                 {
+                    var selectedVersion = selectedVersions[0];
                     SelectedVersionInfo.Visibility = Visibility.Visible;
                     SelectedVersionText.Text = selectedVersion.Version;
                     SelectedVersionAuthorText.Text = selectedVersion.Author ?? "Inconnu";
                     SelectedVersionMessageText.Text = selectedVersion.Message ?? "Aucun message";
+                }
+                else if (hasTwoSelections)
+                {
+                    SelectedVersionInfo.Visibility = Visibility.Visible;
+                    SelectedVersionText.Text = $"{selectedVersions[0].Version} ↔ {selectedVersions[1].Version}";
+                    SelectedVersionAuthorText.Text = "Comparaison";
+                    SelectedVersionMessageText.Text = "2 versions sélectionnées pour comparaison";
                 }
                 else
                 {
@@ -842,89 +851,62 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
         {
             try
             {
-                var selectedVersion = VersionsDataGrid.SelectedItem as DocumentVersion;
-                if (selectedVersion == null)
+                var selectedVersions = VersionsDataGrid.SelectedItems.Cast<DocumentVersion>().ToList();
+                if (selectedVersions.Count != 2)
                 {
-                    MessageBox.Show("Veuillez sélectionner une version à comparer.", 
-                                   "Aucune sélection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("Veuillez sélectionner exactement 2 versions à comparer.\n\n" +
+                                   "💡 Astuce : Maintenez Ctrl enfoncé et cliquez sur 2 versions différentes.", 
+                                   "Sélection requise", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
                 SetStatus("Comparaison en cours...");
                 CompareVersionButton.IsEnabled = false;
 
-                // Demander avec quelle version comparer
-                var compareChoice = MessageBox.Show(
-                    $"🔍 Comparer la version {selectedVersion.Version}\n\n" +
-                    $"Avec quelle version voulez-vous la comparer ?\n\n" +
-                    $"• OUI : Comparer avec la version actuelle\n" +
-                    $"• NON : Choisir une autre version\n" +
-                    $"• ANNULER : Annuler la comparaison",
-                    "Choisir la version de comparaison",
-                    MessageBoxButton.YesNoCancel,
+                var version1 = selectedVersions[0];
+                var version2 = selectedVersions[1];
+
+                // Confirmation de comparaison
+                var confirmResult = MessageBox.Show(
+                    $"🔍 Comparer les versions :\n\n" +
+                    $"📋 Version 1 : {version1.Version}\n" +
+                    $"   📅 {version1.Date:dd/MM/yyyy HH:mm} par {version1.Author}\n" +
+                    $"   💬 {version1.Message}\n\n" +
+                    $"📋 Version 2 : {version2.Version}\n" +
+                    $"   📅 {version2.Date:dd/MM/yyyy HH:mm} par {version2.Author}\n" +
+                    $"   💬 {version2.Message}\n\n" +
+                    $"Continuer la comparaison ?",
+                    "Confirmer la comparaison",
+                    MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
 
-                if (compareChoice == MessageBoxResult.Cancel)
+                if (confirmResult != MessageBoxResult.Yes)
                 {
                     SetStatus("Comparaison annulée");
                     return;
                 }
 
-                string version1, version2;
-                if (compareChoice == MessageBoxResult.Yes)
-                {
-                    // Comparer avec la version actuelle
-                    version1 = _document.CurrentCommitSha ?? "HEAD";
-                    version2 = selectedVersion.CommitSha ?? selectedVersion.Version;
-                }
-                else
-                {
-                    // Pour simplifier, comparer avec la version précédente dans la liste
-                    var versions = VersionsDataGrid.Items.Cast<DocumentVersion>().ToList();
-                    var selectedIndex = versions.IndexOf(selectedVersion);
-                    
-                    if (selectedIndex < versions.Count - 1)
-                    {
-                        var previousVersion = versions[selectedIndex + 1];
-                        version1 = selectedVersion.CommitSha ?? selectedVersion.Version;
-                        version2 = previousVersion.CommitSha ?? previousVersion.Version;
-                        
-                        var confirmPrevious = MessageBox.Show(
-                            $"Comparer :\n" +
-                            $"Version 1 : {selectedVersion.Version}\n" +
-                            $"Version 2 : {previousVersion.Version}\n\n" +
-                            $"Continuer ?",
-                            "Confirmer la comparaison",
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Question);
-                            
-                        if (confirmPrevious != MessageBoxResult.Yes)
-                        {
-                            SetStatus("Comparaison annulée");
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        MessageBox.Show("Aucune version précédente disponible pour la comparaison.", 
-                                       "Pas de version précédente", MessageBoxButton.OK, MessageBoxImage.Information);
-                        return;
-                    }
-                }
+                // Récupérer le contenu des deux versions
+                var content1 = await _apiService.GetDocumentContentVersionAsync(_document.Id, version1.CommitSha ?? version1.Version);
+                var content2 = await _apiService.GetDocumentContentVersionAsync(_document.Id, version2.CommitSha ?? version2.Version);
 
-                // Effectuer la comparaison via l'API
-                var compareResult = await _apiService.CompareDocumentVersionsAsync(_document.Id, version1, version2);
-                
-                if (compareResult != null)
+                if (content1?.Content != null && content2?.Content != null)
                 {
-                    ShowComparisonResult(compareResult, selectedVersion, version1, version2);
+                    // Effectuer la comparaison via l'API pour les métadonnées
+                    var compareResult = await _apiService.CompareDocumentVersionsAsync(
+                        _document.Id, 
+                        version1.CommitSha ?? version1.Version, 
+                        version2.CommitSha ?? version2.Version);
+
+                    // Créer et afficher la fenêtre de diff visuel
+                    ShowVisualDiffWindow(version1, version2, content1.Content, content2.Content, compareResult);
                     SetStatus("Comparaison terminée");
                 }
                 else
                 {
-                    MessageBox.Show("Impossible de comparer les versions. L'API n'a pas retourné de résultat.", 
-                                   "Erreur de comparaison", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    SetStatus("Erreur lors de la comparaison");
+                    MessageBox.Show("Impossible de récupérer le contenu des versions sélectionnées.", 
+                                   "Erreur de contenu", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    SetStatus("Erreur lors de la récupération du contenu");
                 }
             }
             catch (Exception ex)
@@ -935,30 +917,30 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             }
             finally
             {
-                CompareVersionButton.IsEnabled = true;
+                CompareVersionButton.IsEnabled = VersionsDataGrid.SelectedItems.Count == 2;
             }
         }
 
-        private void ShowComparisonResult(object compareResult, DocumentVersion selectedVersion, string version1, string version2)
+        private void ShowVisualDiffWindow(DocumentVersion version1, DocumentVersion version2, string content1, string content2, object? compareResult)
         {
             try
             {
                 // Créer une fenêtre de comparaison dédiée
-                var comparisonWindow = new Window
+                var diffWindow = new Window
                 {
-                    Title = $"Comparaison - {_document.Title}",
-                    Width = 1000,
-                    Height = 700,
+                    Title = $"Comparaison Visuelle - {_document.Title}",
+                    Width = 1400,
+                    Height = 800,
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                     Owner = this,
                     Background = (Brush)Application.Current.Resources["BackgroundBrush"]
                 };
 
-                var grid = new Grid();
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                var mainGrid = new Grid();
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-                // Header avec informations de comparaison
+                // Header avec informations détaillées
                 var headerBorder = new Border
                 {
                     Background = (Brush)Application.Current.Resources["CardBrush"],
@@ -967,76 +949,206 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                     Padding = new Thickness(20, 15, 20, 15)
                 };
 
-                var headerStack = new StackPanel();
-                var titleBlock = new TextBlock
-                {
-                    Text = $"🔍 Comparaison de Versions - {_document.Title}",
-                    FontSize = 18,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = (Brush)Application.Current.Resources["PrimaryBrush"],
-                    Margin = new Thickness(0, 0, 0, 10)
-                };
+                var headerGrid = new Grid();
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-                var versionInfoBlock = new TextBlock
+                // Info Version 1
+                var version1Stack = new StackPanel();
+                var v1Title = new TextBlock
                 {
-                    Text = $"Version 1: {version1} ↔ Version 2: {version2}",
-                    FontSize = 14,
+                    Text = $"📋 Version {version1.Version}",
+                    FontSize = 16,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Colors.DarkBlue),
+                    Margin = new Thickness(0, 0, 0, 5)
+                };
+                var v1Info = new TextBlock
+                {
+                    Text = $"📅 {version1.Date:dd/MM/yyyy HH:mm} par {version1.Author}\n💬 {version1.Message}",
+                    FontSize = 12,
                     Foreground = Brushes.Gray
                 };
+                version1Stack.Children.Add(v1Title);
+                version1Stack.Children.Add(v1Info);
 
-                headerStack.Children.Add(titleBlock);
-                headerStack.Children.Add(versionInfoBlock);
-                headerBorder.Child = headerStack;
+                // Info Version 2
+                var version2Stack = new StackPanel();
+                var v2Title = new TextBlock
+                {
+                    Text = $"📋 Version {version2.Version}",
+                    FontSize = 16,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Colors.DarkRed),
+                    Margin = new Thickness(0, 0, 0, 5)
+                };
+                var v2Info = new TextBlock
+                {
+                    Text = $"📅 {version2.Date:dd/MM/yyyy HH:mm} par {version2.Author}\n💬 {version2.Message}",
+                    FontSize = 12,
+                    Foreground = Brushes.Gray
+                };
+                version2Stack.Children.Add(v2Title);
+                version2Stack.Children.Add(v2Info);
+
+                Grid.SetColumn(version1Stack, 0);
+                Grid.SetColumn(version2Stack, 1);
+                headerGrid.Children.Add(version1Stack);
+                headerGrid.Children.Add(version2Stack);
+                headerBorder.Child = headerGrid;
                 Grid.SetRow(headerBorder, 0);
-                grid.Children.Add(headerBorder);
+                mainGrid.Children.Add(headerBorder);
 
-                // Contenu de la comparaison
+                // Zone de contenu avec diff côte à côte
                 var contentBorder = new Border
                 {
                     Style = (Style)Application.Current.Resources["Card"],
                     Margin = new Thickness(20)
                 };
 
-                var scrollViewer = new ScrollViewer
+                var contentGrid = new Grid();
+                contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                // Version 1 (gauche)
+                var scroll1 = new ScrollViewer
                 {
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
                 };
-
-                var resultTextBox = new TextBox
+                var textBox1 = new TextBox
                 {
-                    Text = FormatComparisonResult(compareResult),
+                    Text = content1,
                     IsReadOnly = true,
-                    TextWrapping = TextWrapping.Wrap,
+                    TextWrapping = TextWrapping.NoWrap,
                     AcceptsReturn = true,
                     FontFamily = new System.Windows.Media.FontFamily("Consolas"),
-                    FontSize = 12,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(15)
+                    FontSize = 11,
+                    Background = new SolidColorBrush(Color.FromRgb(240, 248, 255)),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Colors.LightBlue),
+                    Padding = new Thickness(10)
+                };
+                scroll1.Content = textBox1;
+
+                // Séparateur
+                var separator = new Border
+                {
+                    Width = 2,
+                    Background = (Brush)Application.Current.Resources["BorderBrush"],
+                    Margin = new Thickness(10, 0, 10, 0)
                 };
 
-                scrollViewer.Content = resultTextBox;
-                contentBorder.Child = scrollViewer;
-                Grid.SetRow(contentBorder, 1);
-                grid.Children.Add(contentBorder);
+                // Version 2 (droite)
+                var scroll2 = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+                };
+                var textBox2 = new TextBox
+                {
+                    Text = content2,
+                    IsReadOnly = true,
+                    TextWrapping = TextWrapping.NoWrap,
+                    AcceptsReturn = true,
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                    FontSize = 11,
+                    Background = new SolidColorBrush(Color.FromRgb(255, 248, 248)),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Colors.LightPink),
+                    Padding = new Thickness(10)
+                };
+                scroll2.Content = textBox2;
 
-                comparisonWindow.Content = grid;
-                comparisonWindow.Show();
+                // Ajouter le diff visuel si les contenus sont différents
+                if (content1 != content2)
+                {
+                    HighlightDifferences(textBox1, textBox2, content1, content2);
+                }
+
+                Grid.SetColumn(scroll1, 0);
+                Grid.SetColumn(separator, 1);
+                Grid.SetColumn(scroll2, 2);
+                contentGrid.Children.Add(scroll1);
+                contentGrid.Children.Add(separator);
+                contentGrid.Children.Add(scroll2);
+
+                contentBorder.Child = contentGrid;
+                Grid.SetRow(contentBorder, 1);
+                mainGrid.Children.Add(contentBorder);
+
+                diffWindow.Content = mainGrid;
+                diffWindow.Show();
             }
             catch (Exception ex)
             {
                 // Fallback en cas d'erreur d'affichage
                 var fallbackMessage = $"🔍 Comparaison de Versions\n\n" +
                                      $"Document: {_document.Title}\n" +
-                                     $"Version 1: {version1}\n" +
-                                     $"Version 2: {version2}\n\n" +
-                                     $"Résultat de comparaison:\n" +
-                                     $"{FormatComparisonResult(compareResult)}\n\n" +
+                                     $"Version 1: {version1.Version}\n" +
+                                     $"Version 2: {version2.Version}\n\n" +
+                                     $"Contenu 1: {content1.Length} caractères\n" +
+                                     $"Contenu 2: {content2.Length} caractères\n\n" +
                                      $"(Erreur d'affichage avancé: {ex.Message})";
 
                 MessageBox.Show(fallbackMessage, "Résultat de Comparaison", 
                                MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void HighlightDifferences(TextBox textBox1, TextBox textBox2, string content1, string content2)
+        {
+            try
+            {
+                // Algorithme simple de diff par lignes
+                var lines1 = content1.Split('\n');
+                var lines2 = content2.Split('\n');
+
+                // Pour un vrai diff, on pourrait utiliser une librairie comme DiffPlex
+                // Ici, on fait une comparaison simple ligne par ligne
+                var diff1 = new StringBuilder();
+                var diff2 = new StringBuilder();
+
+                int maxLines = Math.Max(lines1.Length, lines2.Length);
+
+                for (int i = 0; i < maxLines; i++)
+                {
+                    var line1 = i < lines1.Length ? lines1[i] : "";
+                    var line2 = i < lines2.Length ? lines2[i] : "";
+
+                    if (line1 == line2)
+                    {
+                        // Ligne identique
+                        diff1.AppendLine($"  {line1}");
+                        diff2.AppendLine($"  {line2}");
+                    }
+                    else
+                    {
+                        // Ligne différente
+                        if (i < lines1.Length)
+                            diff1.AppendLine($"- {line1}");
+                        else
+                            diff1.AppendLine($"  ");
+
+                        if (i < lines2.Length)
+                            diff2.AppendLine($"+ {line2}");
+                        else
+                            diff2.AppendLine($"  ");
+                    }
+                }
+
+                // Mettre à jour les TextBox avec le diff formaté
+                textBox1.Text = diff1.ToString();
+                textBox2.Text = diff2.ToString();
+
+                // Note: Pour un vrai highlighting coloré, il faudrait utiliser RichTextBox
+                // ou des contrôles plus avancés
+            }
+            catch (Exception ex)
+            {
+                // Si le diff échoue, garder le contenu original
+                System.Diagnostics.Debug.WriteLine($"Erreur lors du highlighting: {ex.Message}");
             }
         }
 

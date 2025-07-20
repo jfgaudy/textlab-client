@@ -274,9 +274,10 @@
                                 <Button Name="RestoreVersionButton" Content="⏮️ Restaurer" 
                                        Style="{StaticResource ModernButton}" Click="RestoreVersionButton_Click" 
                                        IsEnabled="False" Margin="5,0"/>
-                                <Button Name="CompareVersionButton" Content="🔍 Comparer" 
+                                <Button Name="CompareVersionButton" Content="🔍 Comparer (2)" 
                                        Style="{StaticResource SecondaryButton}" Click="CompareVersionButton_Click" 
-                                       IsEnabled="False" Margin="5,0"/>
+                                       IsEnabled="False" Margin="5,0" 
+                                       ToolTip="Sélectionnez 2 versions avec Ctrl+clic pour les comparer"/>
                                 <Button Name="CopyVersionButton" Content="📋 Copier" 
                                        Style="{StaticResource SecondaryButton}" Click="CopyVersionButton_Click" 
                                        IsEnabled="False" Margin="5,0"/>
@@ -289,7 +290,8 @@
                         <DataGrid Name="VersionsDataGrid" AutoGenerateColumns="False" IsReadOnly="True" 
                                  Background="Transparent" BorderThickness="0" GridLinesVisibility="Horizontal"
                                  RowBackground="White" AlternatingRowBackground="#FAFAFA"
-                                 HeadersVisibility="Column" SelectionChanged="VersionsDataGrid_SelectionChanged">
+                                 HeadersVisibility="Column" SelectionChanged="VersionsDataGrid_SelectionChanged"
+                                 SelectionMode="Extended">
                             <DataGrid.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="👁️ Voir cette version" Click="ViewVersionMenuItem_Click"/>
