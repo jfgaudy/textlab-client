@@ -863,18 +863,22 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 SetStatus("Comparaison en cours...");
                 CompareVersionButton.IsEnabled = false;
 
-                var version1 = selectedVersions[0];
-                var version2 = selectedVersions[1];
+                // Trier les versions par date pour identifier l'ancienne et la récente
+                var sortedVersions = selectedVersions.OrderBy(v => v.Date).ToList();
+                var olderVersion = sortedVersions[0];   // Version plus ancienne
+                var newerVersion = sortedVersions[1];   // Version plus récente
 
-                // Confirmation de comparaison
+                // Confirmation de comparaison avec indication chronologique
                 var confirmResult = MessageBox.Show(
                     $"🔍 Comparer les versions :\n\n" +
-                    $"📋 Version 1 : {version1.Version}\n" +
-                    $"   📅 {version1.Date:dd/MM/yyyy HH:mm} par {version1.Author}\n" +
-                    $"   💬 {version1.Message}\n\n" +
-                    $"📋 Version 2 : {version2.Version}\n" +
-                    $"   📅 {version2.Date:dd/MM/yyyy HH:mm} par {version2.Author}\n" +
-                    $"   💬 {version2.Message}\n\n" +
+                    $"📋 Version ancienne : {olderVersion.Version}\n" +
+                    $"   📅 {olderVersion.Date:dd/MM/yyyy HH:mm} par {olderVersion.Author}\n" +
+                    $"   💬 {olderVersion.Message}\n\n" +
+                    $"📋 Version récente : {newerVersion.Version}\n" +
+                    $"   📅 {newerVersion.Date:dd/MM/yyyy HH:mm} par {newerVersion.Author}\n" +
+                    $"   💬 {newerVersion.Message}\n\n" +
+                    $"✅ VERT (+) : Ce qui a été AJOUTÉ depuis {olderVersion.Version}\n" +
+                    $"❌ ROUGE (-) : Ce qui a été SUPPRIMÉ depuis {olderVersion.Version}\n\n" +
                     $"Continuer la comparaison ?",
                     "Confirmer la comparaison",
                     MessageBoxButton.YesNo,
@@ -886,20 +890,29 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                     return;
                 }
 
-                // Récupérer le contenu des deux versions
-                var content1 = await _apiService.GetDocumentContentVersionAsync(_document.Id, version1.CommitSha ?? version1.Version);
-                var content2 = await _apiService.GetDocumentContentVersionAsync(_document.Id, version2.CommitSha ?? version2.Version);
+                // Récupérer le contenu des deux versions dans l'ordre chronologique
+                await LoggingService.LogDebugAsync($"🔍 Comparaison - Récupération contenu version ancienne: {olderVersion.Version}");
+                await LoggingService.LogDebugAsync($"🔍 Version ancienne - CommitSha: '{olderVersion.CommitSha}', Version: '{olderVersion.Version}'");
+                
+                var olderContent = await _apiService.GetDocumentContentVersionAsync(_document.Id, olderVersion.CommitSha ?? olderVersion.Version);
+                
+                await LoggingService.LogDebugAsync($"🔍 Comparaison - Récupération contenu version récente: {newerVersion.Version}");
+                await LoggingService.LogDebugAsync($"🔍 Version récente - CommitSha: '{newerVersion.CommitSha}', Version: '{newerVersion.Version}'");
+                
+                var newerContent = await _apiService.GetDocumentContentVersionAsync(_document.Id, newerVersion.CommitSha ?? newerVersion.Version);
+                
+                await LoggingService.LogDebugAsync($"🔍 Résultats - ContentAncien null: {olderContent == null}, ContentRécent null: {newerContent == null}");
 
-                if (content1?.Content != null && content2?.Content != null)
+                if (olderContent?.Content != null && newerContent?.Content != null)
                 {
                     // Effectuer la comparaison via l'API pour les métadonnées
                     var compareResult = await _apiService.CompareDocumentVersionsAsync(
                         _document.Id, 
-                        version1.CommitSha ?? version1.Version, 
-                        version2.CommitSha ?? version2.Version);
+                        olderVersion.CommitSha ?? olderVersion.Version, 
+                        newerVersion.CommitSha ?? newerVersion.Version);
 
                     // Créer et afficher la fenêtre de diff visuel
-                    ShowVisualDiffWindow(version1, version2, content1.Content, content2.Content, compareResult);
+                    ShowVisualDiffWindow(olderVersion, newerVersion, olderContent.Content, newerContent.Content, compareResult);
                     SetStatus("Comparaison terminée");
                 }
                 else
@@ -1062,6 +1075,7 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 scroll2.Content = textBox2;
 
                 // Ajouter le diff visuel si les contenus sont différents
+                // Note: version1 = ancienne, version2 = récente (selon l'ordre chronologique)
                 if (content1 != content2)
                 {
                     HighlightDifferences(textBox1, textBox2, content1, content2);
@@ -1097,50 +1111,61 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             }
         }
 
-        private void HighlightDifferences(TextBox textBox1, TextBox textBox2, string content1, string content2)
+        private void HighlightDifferences(TextBox textBox1, TextBox textBox2, string olderContent, string newerContent)
         {
             try
             {
                 // Algorithme simple de diff par lignes
-                var lines1 = content1.Split('\n');
-                var lines2 = content2.Split('\n');
+                // textBox1 = Version ancienne (gauche)
+                // textBox2 = Version récente (droite)
+                var olderLines = olderContent.Split('\n');
+                var newerLines = newerContent.Split('\n');
 
                 // Pour un vrai diff, on pourrait utiliser une librairie comme DiffPlex
                 // Ici, on fait une comparaison simple ligne par ligne
-                var diff1 = new StringBuilder();
-                var diff2 = new StringBuilder();
+                var diffOlder = new StringBuilder();
+                var diffNewer = new StringBuilder();
 
-                int maxLines = Math.Max(lines1.Length, lines2.Length);
+                int maxLines = Math.Max(olderLines.Length, newerLines.Length);
 
                 for (int i = 0; i < maxLines; i++)
                 {
-                    var line1 = i < lines1.Length ? lines1[i] : "";
-                    var line2 = i < lines2.Length ? lines2[i] : "";
+                    var olderLine = i < olderLines.Length ? olderLines[i] : "";
+                    var newerLine = i < newerLines.Length ? newerLines[i] : "";
 
-                    if (line1 == line2)
+                    if (olderLine == newerLine)
                     {
-                        // Ligne identique
-                        diff1.AppendLine($"  {line1}");
-                        diff2.AppendLine($"  {line2}");
+                        // Ligne identique - pas de changement
+                        diffOlder.AppendLine($"  {olderLine}");
+                        diffNewer.AppendLine($"  {newerLine}");
                     }
                     else
                     {
                         // Ligne différente
-                        if (i < lines1.Length)
-                            diff1.AppendLine($"- {line1}");
+                        if (i < olderLines.Length && i >= newerLines.Length)
+                        {
+                            // Ligne supprimée dans la version récente
+                            diffOlder.AppendLine($"- {olderLine}");  // Rouge - ligne supprimée
+                            diffNewer.AppendLine($"  ");             // Vide dans la version récente
+                        }
+                        else if (i >= olderLines.Length && i < newerLines.Length)
+                        {
+                            // Ligne ajoutée dans la version récente
+                            diffOlder.AppendLine($"  ");             // Vide dans la version ancienne
+                            diffNewer.AppendLine($"+ {newerLine}");  // Vert - ligne ajoutée
+                        }
                         else
-                            diff1.AppendLine($"  ");
-
-                        if (i < lines2.Length)
-                            diff2.AppendLine($"+ {line2}");
-                        else
-                            diff2.AppendLine($"  ");
+                        {
+                            // Ligne modifiée
+                            diffOlder.AppendLine($"- {olderLine}");  // Rouge - ancienne version
+                            diffNewer.AppendLine($"+ {newerLine}");  // Vert - nouvelle version
+                        }
                     }
                 }
 
                 // Mettre à jour les TextBox avec le diff formaté
-                textBox1.Text = diff1.ToString();
-                textBox2.Text = diff2.ToString();
+                textBox1.Text = diffOlder.ToString();
+                textBox2.Text = diffNewer.ToString();
 
                 // Note: Pour un vrai highlighting coloré, il faudrait utiliser RichTextBox
                 // ou des contrôles plus avancés

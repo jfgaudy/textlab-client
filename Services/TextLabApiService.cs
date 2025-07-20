@@ -644,24 +644,38 @@ namespace TextLabClient.Services
         {
             try
             {
+                await LoggingService.LogDebugAsync($"🔍 GetDocumentContentVersionAsync appelé - DocumentId: '{documentId}', CommitSha: '{commitSha}'");
+                
                 // Utiliser l'endpoint content avec le paramètre version
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content?version={commitSha}");
-                response.EnsureSuccessStatusCode();
+                var url = $"{_baseUrl}/api/v1/documents/{documentId}/content?version={commitSha}";
+                await LoggingService.LogDebugAsync($"🔍 URL complète: {url}");
+                
+                var response = await _httpClient.GetAsync(url);
+                
+                await LoggingService.LogDebugAsync($"🔍 Réponse HTTP: {response.StatusCode} - {response.ReasonPhrase}");
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogErrorAsync($"❌ Erreur HTTP {response.StatusCode}: {errorContent}");
+                    return null;
+                }
 
                 var content = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"🔍 GetDocumentContentVersion Response: {content}");
+                await LoggingService.LogDebugAsync($"🔍 GetDocumentContentVersion Response: {content.Substring(0, Math.Min(200, content.Length))}...");
 
                 var result = JsonConvert.DeserializeObject<DocumentContent>(content);
+                await LoggingService.LogDebugAsync($"✅ Désérialisation réussie - Content length: {result?.Content?.Length ?? 0}");
                 return result;
             }
             catch (HttpRequestException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Erreur HTTP GetDocumentContentVersion: {ex.Message}");
+                await LoggingService.LogErrorAsync($"❌ Erreur HTTP GetDocumentContentVersion: {ex.Message}");
                 return null;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentContentVersion: {ex.Message}");
+                await LoggingService.LogErrorAsync($"❌ Erreur GetDocumentContentVersion: {ex.Message}");
                 return null;
             }
         }

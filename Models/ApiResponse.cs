@@ -64,6 +64,12 @@ namespace TextLabClient.Models
 
     public class DocumentContent
     {
+        [JsonProperty("id")]
+        public string Id { get; set; } = string.Empty;
+        
+        [JsonProperty("title")]
+        public string Title { get; set; } = string.Empty;
+        
         [JsonProperty("content")]
         public string Content { get; set; } = string.Empty;
         
@@ -74,7 +80,7 @@ namespace TextLabClient.Models
         public string Version { get; set; } = string.Empty;
         
         [JsonProperty("last_modified")]
-        public DateTime LastModified { get; set; }
+        public DateTime? LastModified { get; set; }
         
         [JsonProperty("repository_name")]
         public string RepositoryName { get; set; } = string.Empty;

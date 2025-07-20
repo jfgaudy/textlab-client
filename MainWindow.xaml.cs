@@ -1041,6 +1041,52 @@ namespace TextLabClient
             }
         }
 
+        private async void ClearLogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var result = MessageBox.Show(
+                    "Êtes-vous sûr de vouloir vider les logs ?\n\n" +
+                    "Une sauvegarde sera automatiquement créée avant le vidage.\n" +
+                    "Cette action ne peut pas être annulée.",
+                    "Vider les logs", 
+                    MessageBoxButton.YesNo, 
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    var success = await LoggingService.ClearLogsAsync();
+                    
+                    if (success)
+                    {
+                        MessageBox.Show(
+                            "✅ Logs vidés avec succès !\n\n" +
+                            "Une sauvegarde a été créée automatiquement.\n" +
+                            "Les nouveaux logs commenceront à être enregistrés.",
+                            "Logs vidés", 
+                            MessageBoxButton.OK, 
+                            MessageBoxImage.Information);
+                        
+                        SetStatus("Logs vidés avec succès - Backup créé");
+                    }
+                    else
+                    {
+                        MessageBox.Show(
+                            "❌ Erreur lors du vidage des logs.\n\n" +
+                            "Consultez les logs pour plus de détails.",
+                            "Erreur", 
+                            MessageBoxButton.OK, 
+                            MessageBoxImage.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur lors du vidage des logs: {ex.Message}", "Erreur", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void OpenLogsFolderButton_Click(object sender, RoutedEventArgs e)
         {
             try

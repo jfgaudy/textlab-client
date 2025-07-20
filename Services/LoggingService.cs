@@ -84,5 +84,29 @@ namespace TextLabClient.Services
                 return $"Erreur lecture logs: {ex.Message}";
             }
         }
+
+        public static async Task<bool> ClearLogsAsync()
+        {
+            try
+            {
+                if (File.Exists(LogFilePath))
+                {
+                    // Créer un backup avant de vider
+                    var backupPath = LogFilePath.Replace(".log", $"_backup_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+                    File.Copy(LogFilePath, backupPath);
+                    
+                    // Vider le fichier de log principal
+                    await File.WriteAllTextAsync(LogFilePath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [INFO] Logs vidés - Backup créé: {Path.GetFileName(backupPath)}{Environment.NewLine}");
+                    
+                    return true;
+                }
+                return true; // Pas de fichier à vider
+            }
+            catch (Exception ex)
+            {
+                await LogErrorAsync($"Erreur lors du vidage des logs: {ex.Message}");
+                return false;
+            }
+        }
     }
 } 
