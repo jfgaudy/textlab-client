@@ -23,8 +23,12 @@ namespace TextLabClient
         public RepositoryManagementWindow()
         {
             InitializeComponent();
-            _adminService = new TextLabAdminService();
-            _apiService = new TextLabApiService();
+            
+            // Créer une instance temporaire du service d'auth pour cette fenêtre
+            var authService = new LLMCenterAuthService();
+            _adminService = new TextLabAdminService("https://textlab-api.onrender.com", authService);
+            _apiService = new TextLabApiService(authService);
+            
             LoadRepositories();
         }
 

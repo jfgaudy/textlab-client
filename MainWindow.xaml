@@ -130,13 +130,15 @@
                         <TextBlock Grid.Column="0" Text="URL API:" VerticalAlignment="Center" 
                                   Margin="0,0,10,0" FontWeight="SemiBold"/>
                         <TextBox Grid.Column="1" Name="ApiUrlTextBox" 
-                                Text="https://textlab-api.onrender.com" Margin="0,0,15,0"/>
+                                Text="http://localhost:8000" Margin="0,0,15,0"/>
                         
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
                             <Button Name="TestConnectionButton" Content="🔗 Connecter" 
                                    Click="TestConnectionButton_Click" Margin="0,0,10,0"/>
                             <Button Name="TestInitButton" Content="⚙️ Diagnostics"
-                                   Click="TestInitButton_Click" Margin="0,0,15,0"/>
+                                   Click="TestInitButton_Click" Margin="0,0,10,0"/>
+                            <Button Name="ShowTokenButton" Content="🔑 Token"
+                                   Click="ShowTokenButton_Click" Margin="0,0,15,0"/>
                             <Ellipse Width="12" Height="12" Name="ConnectionStatusIndicator" 
                                     Fill="Gray" VerticalAlignment="Center" Margin="0,0,5,0"/>
                             <TextBlock Name="ConnectionStatusText" Text="Non testé" 

@@ -340,7 +340,43 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             }
             catch (Exception ex)
             {
-                DocumentContentTextBox.Text = $"❌ Erreur lors du chargement du contenu:\n{ex.Message}";
+                // Améliorer le message d'erreur selon le type de repository
+                string errorMessage;
+                if (ex.Message.Contains("500") || ex.Message.Contains("Erreur interne"))
+                {
+                    // Erreur 500 - problème serveur
+                    if (_document.RepositoryName?.ToLower().Contains("github") == true || 
+                        !string.IsNullOrEmpty(_document.GitPath))
+                    {
+                        errorMessage = @"❌ ERREUR SERVEUR (500) - Repository GitHub
+
+🔍 DIAGNOSTIC :
+• Les endpoints /content et /versions fonctionnent pour les repositories locaux
+• Mais ils échouent avec une erreur 500 pour les repositories GitHub
+• Ce problème vient du serveur (GitHubAPIService)
+
+🛠️ CAUSES POSSIBLES :
+• Token GitHub manquant/invalide côté serveur
+• Bug dans l'implémentation GitHubAPIService
+• Problèmes de réseau vers l'API GitHub
+• Configuration repository incorrecte
+
+📧 SOLUTION : Contactez l'administrateur du serveur pour :
+• Vérifier les logs serveur lors de l'appel à ce document
+• Vérifier la configuration GitHub du repository
+• Tester manuellement l'accès GitHub API côté serveur";
+                    }
+                    else
+                    {
+                        errorMessage = $"❌ Erreur serveur (500) lors du chargement du contenu:\n{ex.Message}";
+                    }
+                }
+                else
+                {
+                    errorMessage = $"❌ Erreur lors du chargement du contenu:\n{ex.Message}";
+                }
+                
+                DocumentContentTextBox.Text = errorMessage;
                 ContentSizeText.Text = "Erreur";
             }
         }
@@ -363,10 +399,10 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 {
                     VersionCountText.Text = "Historique indisponible (API endpoint 404)";
                     
-                    // Créer une version factice pour expliquer le problème
-                    var dummyVersions = new List<object>
+                    // 🔧 CORRECTION: Créer un vrai DocumentVersion au lieu d'un objet anonyme
+                    var dummyVersions = new List<DocumentVersion>
                     {
-                        new
+                        new DocumentVersion
                         {
                             Version = "❌ Non disponible",
                             CommitSha = "N/A",

@@ -14,41 +14,170 @@ namespace TextLabClient.Services
     {
         private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
         private string _baseUrl = "https://textlab-api.onrender.com";
+        private readonly LLMCenterAuthService _authService;
 
         public bool IsConnected { get; private set; }
 
-        public TextLabApiService()
+        public TextLabApiService(LLMCenterAuthService authService)
         {
+            _authService = authService;
         }
 
         public void SetBaseUrl(string baseUrl)
         {
             _baseUrl = baseUrl.TrimEnd('/');
-            IsConnected = false;
+            // 🧪 TEST: Commenter pour voir si ça résout le problème d'accès après Connecter
+            // IsConnected = false;
+        }
+
+        /// <summary>
+        /// Crée une requête HTTP avec les headers d'authentification requis
+        /// </summary>
+        private async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(HttpMethod method, string endpoint)
+        {
+            var request = new HttpRequestMessage(method, $"{_baseUrl}{endpoint}");
+            
+            if (!_authService.IsAuthenticated())
+            {
+                throw new UnauthorizedAccessException("Utilisateur non authentifié");
+            }
+
+            var token = await _authService.GetBearerTokenAsync();
+            if (string.IsNullOrEmpty(token))
+            {
+                throw new UnauthorizedAccessException("Token d'authentification manquant");
+            }
+
+            request.Headers.Add("X-User-Token", token);
+            await LoggingService.LogInfoAsync($"🔐 Requête authentifiée créée vers: {_baseUrl}{endpoint}");
+            return request;
+        }
+
+        /// <summary>
+        /// Envoie une requête authentifiée avec gestion des erreurs
+        /// </summary>
+        private async Task<HttpResponseMessage> SendAuthenticatedRequestAsync(HttpRequestMessage request)
+        {
+            var response = await _httpClient.SendAsync(request);
+            
+            // Si 401, essayer de rafraîchir le token et réessayer
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                await LoggingService.LogWarningAsync("🔄 Token expiré, tentative de refresh...");
+                
+                if (await _authService.RefreshTokenIfNeededAsync())
+                {
+                    // Recréer la requête avec le nouveau token
+                    var newRequest = await CreateAuthenticatedRequestAsync(request.Method, request.RequestUri?.PathAndQuery ?? "");
+                    if (request.Content != null)
+                    {
+                        newRequest.Content = request.Content;
+                    }
+                    
+                    response = await _httpClient.SendAsync(newRequest);
+                    await LoggingService.LogInfoAsync("✅ Requête retentée avec nouveau token");
+                }
+                else
+                {
+                    await LoggingService.LogErrorAsync("❌ Impossible de rafraîchir le token");
+                }
+            }
+            
+            return response;
+        }
+
+        /// <summary>
+        /// Helper pour requêtes GET authentifiées
+        /// </summary>
+        private async Task<T?> GetAuthenticatedAsync<T>(string endpoint)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, endpoint);
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    return JsonConvert.DeserializeObject<T>(content);
+                }
+                
+                return default(T);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lors de l'envoi de la requête: {ex.Message}");
+                return default(T);
+            }
         }
 
         public async Task<HealthInfo?> TestConnectionAsync()
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/health");
+                await LoggingService.LogDebugAsync($"🔍 Test de connexion vers: {_baseUrl}");
+
+                // Essayer plusieurs endpoints pour déterminer l'état de santé
+                var endpoints = new[] { "/health", "/admin/status", "/api/v1/documents/diagnostics" };
                 
-                if (response.IsSuccessStatusCode)
+                foreach (var endpoint in endpoints)
                 {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var healthInfo = JsonConvert.DeserializeObject<HealthInfo>(content);
-                    IsConnected = true;
-                    return healthInfo;
+                    try
+                    {
+                        await LoggingService.LogDebugAsync($"🔍 Tentative: {endpoint}");
+                        
+                        var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, endpoint);
+                        var response = await SendAuthenticatedRequestAsync(request);
+                        
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var content = await response.Content.ReadAsStringAsync();
+                            await LoggingService.LogDebugAsync($"🔍 {endpoint} → {response.StatusCode}");
+                            await LoggingService.LogDebugAsync($"🔍 Contenu: {content.Substring(0, Math.Min(200, content.Length))}...");
+
+                            // Essayer de parser comme HealthInfo
+                            try
+                            {
+                                var healthInfo = JsonConvert.DeserializeObject<HealthInfo>(content);
+                                if (healthInfo != null)
+                                {
+                                    IsConnected = true;
+                                    await LoggingService.LogDebugAsync($"✅ Connexion réussie via {endpoint}");
+                                    return healthInfo;
+                                }
+                            }
+                            catch
+                            {
+                                // Si ce n'est pas un JSON HealthInfo valide, créer un HealthInfo basique
+                                if (response.IsSuccessStatusCode)
+                                {
+                                    IsConnected = true;
+                                    await LoggingService.LogDebugAsync($"✅ Serveur répond via {endpoint}, création HealthInfo basique");
+                                    return new HealthInfo
+                                    {
+                                        Status = "initializing",
+                                        Version = "",
+                                        Environment = ""
+                                    };
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await LoggingService.LogDebugAsync($"❌ {endpoint} → Exception: {ex.Message}");
+                        continue;
+                    }
                 }
-                else
-                {
-                    IsConnected = false;
-                    return null;
-                }
+
+                IsConnected = false;
+                await LoggingService.LogErrorAsync($"❌ Aucun endpoint de health accessible sur {_baseUrl}");
+                return null;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 IsConnected = false;
+                await LoggingService.LogErrorAsync($"❌ Erreur générale de connexion: {ex.Message}");
                 return null;
             }
         }
@@ -171,56 +300,11 @@ namespace TextLabClient.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/repositories");
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    
-                    // Debug: Afficher la réponse brute
-                    System.Diagnostics.Debug.WriteLine($"Réponse brute repositories: {content}");
-                    
-                    // D'après la documentation, l'API retourne directement une liste de repositories
-                    try
-                    {
-                    var repositories = JsonConvert.DeserializeObject<List<Repository>>(content);
-                        if (repositories != null)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Repositories trouvés via Liste directe: {repositories.Count}");
-                            return repositories;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation Liste: {ex.Message}");
-                    }
-                    
-                    // Fallback : essayer avec ApiResponse si la structure a changé
-                    try
-                    {
-                        var apiResponse = JsonConvert.DeserializeObject<ApiResponse<List<Repository>>>(content);
-                        if (apiResponse?.Data != null)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Repositories trouvés via ApiResponse: {apiResponse.Data.Count}");
-                            return apiResponse.Data;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Erreur désérialisation ApiResponse: {ex.Message}");
-                    }
-                    
-                    return null;
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"Erreur HTTP: {response.StatusCode} - {response.ReasonPhrase}");
-                    return null;
-                }
+                return await GetAuthenticatedAsync<List<Repository>>("/api/v1/repositories");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Exception GetRepositoriesAsync: {ex.Message}");
+                await LoggingService.LogErrorAsync($"❌ Exception GetRepositoriesAsync: {ex.Message}");
                 return null;
             }
         }
@@ -231,13 +315,15 @@ namespace TextLabClient.Services
         {
             try
             {
-                var url = $"{_baseUrl}/api/v1/documents/";
+                // 🔐 UTILISER L'AUTHENTIFICATION COMME POUR LES REPOSITORIES
+                var endpoint = "/api/v1/documents";
                 if (!string.IsNullOrEmpty(repositoryId))
                 {
-                    url += $"?repository_id={repositoryId}";
+                    endpoint += $"?repository_id={repositoryId}";
                 }
 
-                var response = await _httpClient.GetAsync(url);
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, endpoint);
+                var response = await SendAuthenticatedRequestAsync(request);
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync();
@@ -269,7 +355,9 @@ namespace TextLabClient.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}");
+                // 🔐 UTILISER L'AUTHENTIFICATION POUR ACCÉDER AU CONTENU DU DOCUMENT
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/documents/{documentId}");
+                var response = await SendAuthenticatedRequestAsync(request);
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync();
@@ -318,7 +406,11 @@ namespace TextLabClient.Services
                 var json = JsonConvert.SerializeObject(document);
                 var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/", httpContent);
+                // 🔐 CORRECTION: Utiliser la requête authentifiée
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, "/api/v1/documents/");
+                request.Content = httpContent;
+                
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 System.Diagnostics.Debug.WriteLine($"🚀 CreateDocument - URL: {_baseUrl}/api/v1/documents/");
                 System.Diagnostics.Debug.WriteLine($"🚀 CreateDocument - Status: {response.StatusCode}");
@@ -462,7 +554,10 @@ namespace TextLabClient.Services
 
                 System.Diagnostics.Debug.WriteLine($"🔍 CompareVersions - ID: {documentId}, v1: {version1}, v2: {version2}");
 
-                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions/compare", httpContent);
+                // 🔐 UTILISER L'AUTHENTIFICATION POUR COMPARER LES VERSIONS
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, $"/api/v1/documents/{documentId}/versions/compare");
+                request.Content = httpContent;
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 var responseContent = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($"🔍 CompareVersions - Status: {response.StatusCode}");
@@ -530,13 +625,15 @@ namespace TextLabClient.Services
         {
             try
             {
-                var url = $"{_baseUrl}/api/v1/documents/{documentId}/content";
+                var endpoint = $"/api/v1/documents/{documentId}/content";
                 if (!string.IsNullOrEmpty(version))
                 {
-                    url += $"?version={version}";
+                    endpoint += $"?version={version}";
                 }
 
-                var response = await _httpClient.GetAsync(url);
+                // 🔐 CORRECTION: Utiliser l'authentification
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, endpoint);
+                var response = await SendAuthenticatedRequestAsync(request);
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync();
@@ -553,28 +650,12 @@ namespace TextLabClient.Services
         {
             try
             {
-                var rawResponse = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/raw");
-                rawResponse.EnsureSuccessStatusCode();
+                // 🔐 CORRECTION: Utiliser l'authentification
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/documents/{documentId}/raw");
+                var response = await SendAuthenticatedRequestAsync(request);
+                response.EnsureSuccessStatusCode();
 
-                var rawContent = await rawResponse.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"🔍 GetDocumentRawContent Response: {rawContent}");
-
-                // Essayer de parser la réponse
-                try
-                {
-                    var parsedResponse = JsonConvert.DeserializeObject<dynamic>(rawContent);
-                    if (parsedResponse?.content != null)
-                    {
-                        return parsedResponse.content.ToString();
-                    }
-                }
-                catch
-                {
-                    // Si le parsing JSON échoue, retourner le contenu brut
-                    return rawContent;
-                }
-
-                return rawContent;
+                return await response.Content.ReadAsStringAsync();
             }
             catch (Exception ex)
             {
@@ -587,7 +668,9 @@ namespace TextLabClient.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions");
+                // 🔐 UTILISER L'AUTHENTIFICATION POUR ACCÉDER AU COMPTEUR DE VERSIONS
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/documents/{documentId}/versions");
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 if (response.IsSuccessStatusCode)
                 {
@@ -600,8 +683,9 @@ namespace TextLabClient.Services
                     return 0;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur GetDocumentVersionsCountAsync: {ex.Message}");
                 return 0;
             }
         }
@@ -615,7 +699,9 @@ namespace TextLabClient.Services
                 await LoggingService.LogDebugAsync($"🔍 GetDocumentContent appelé avec documentId: '{documentId}'");
                 await LoggingService.LogDebugAsync($"🔍 URL complète: {_baseUrl}/api/v1/documents/{documentId}/content");
                 
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/content");
+                // 🔐 CORRECTION: Utiliser l'authentification
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/documents/{documentId}/content");
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 await LoggingService.LogDebugAsync($"🔍 Réponse HTTP: {response.StatusCode} - {response.ReasonPhrase}");
                 
@@ -646,12 +732,11 @@ namespace TextLabClient.Services
             {
                 await LoggingService.LogDebugAsync($"🔍 GetDocumentContentVersionAsync appelé - DocumentId: '{documentId}', CommitSha: '{commitSha}'");
                 
-                // Utiliser l'endpoint content avec le paramètre version
-                var url = $"{_baseUrl}/api/v1/documents/{documentId}/content?version={commitSha}";
-                await LoggingService.LogDebugAsync($"🔍 URL complète: {url}");
+                // 🔐 CORRECTION: Utiliser l'authentification
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/documents/{documentId}/content?version={commitSha}");
+                var response = await SendAuthenticatedRequestAsync(request);
                 
-                var response = await _httpClient.GetAsync(url);
-                
+                await LoggingService.LogDebugAsync($"🔍 URL complète: {_baseUrl}/api/v1/documents/{documentId}/content?version={commitSha}");
                 await LoggingService.LogDebugAsync($"🔍 Réponse HTTP: {response.StatusCode} - {response.ReasonPhrase}");
                 
                 if (!response.IsSuccessStatusCode)
@@ -689,7 +774,9 @@ namespace TextLabClient.Services
                 await LoggingService.LogDebugAsync($"🔍 GetDocumentVersions appelé avec documentId: '{documentId}'");
                 await LoggingService.LogDebugAsync($"🔍 URL complète: {_baseUrl}/api/v1/documents/{documentId}/versions?limit={limit}");
                 
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions?limit={limit}");
+                // 🔐 UTILISER L'AUTHENTIFICATION POUR ACCÉDER AUX VERSIONS
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/documents/{documentId}/versions?limit={limit}");
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 await LoggingService.LogDebugAsync($"🔍 Réponse HTTP: {response.StatusCode} - {response.ReasonPhrase}");
                 
@@ -992,7 +1079,9 @@ namespace TextLabClient.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/admin/repositories/{repositoryId}/config");
+                // 🔐 CORRECTION: Utiliser directement l'authentification de TextLabApiService pour l'endpoint admin
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, $"/api/v1/admin/repositories/{repositoryId}/config");
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 if (response.IsSuccessStatusCode)
                 {
@@ -1002,7 +1091,7 @@ namespace TextLabClient.Services
                     var configResponse = JsonConvert.DeserializeObject<dynamic>(content);
                     var rootDocuments = configResponse?.config?.root_documents?.ToString() ?? "documents/";
                     
-                    System.Diagnostics.Debug.WriteLine($"✅ Repository {repositoryId}, RootDocuments: '{rootDocuments}'");
+                    System.Diagnostics.Debug.WriteLine($"✅ Repository {repositoryId}, RootDocuments: '{rootDocuments}' (depuis .textlab.yaml)");
                     return rootDocuments;
                 }
                 else
@@ -1034,20 +1123,28 @@ namespace TextLabClient.Services
                     documentsRoot += "/";
                 }
                 
+                // 🔧 NETTOYER LE GITPATH : éviter la duplication si gitPath commence déjà par documentsRoot
+                var cleanGitPath = gitPath;
+                if (!string.IsNullOrEmpty(documentsRoot) && cleanGitPath.StartsWith(documentsRoot))
+                {
+                    cleanGitPath = cleanGitPath.Substring(documentsRoot.Length);
+                    System.Diagnostics.Debug.WriteLine($"🧹 GitPath nettoyé: '{gitPath}' → '{cleanGitPath}' (suppression de '{documentsRoot}')");
+                }
+                
                 // Construire l'URL GitHub complète
                 var githubUrl = "";
                 
                 if (repository.Name.ToLower() == "gaudylab")
                 {
-                    githubUrl = $"https://github.com/jfgaudy/gaudylab/blob/main/{documentsRoot}{gitPath}";
+                    githubUrl = $"https://github.com/jfgaudy/gaudylab/blob/main/{documentsRoot}{cleanGitPath}";
                 }
                 else if (repository.Name.ToLower().Contains("pac"))
                 {
-                    githubUrl = $"https://github.com/jfgaudy/PAC_Repo/blob/main/{documentsRoot}{gitPath}";
+                    githubUrl = $"https://github.com/jfgaudy/PAC_Repo/blob/main/{documentsRoot}{cleanGitPath}";
                 }
                 else
                 {
-                    githubUrl = $"https://github.com/jfgaudy/{repository.Name}/blob/main/{documentsRoot}{gitPath}";
+                    githubUrl = $"https://github.com/jfgaudy/{repository.Name}/blob/main/{documentsRoot}{cleanGitPath}";
                 }
                 
                 System.Diagnostics.Debug.WriteLine($"🔗 URL GitHub construite: {githubUrl}");

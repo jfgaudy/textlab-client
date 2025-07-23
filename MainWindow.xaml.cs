@@ -3,6 +3,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,35 +17,98 @@ namespace TextLabClient
 {
     public partial class MainWindow : Window
     {
-        private readonly TextLabApiService _apiService = new TextLabApiService();
-        private readonly TextLabAdminService _adminService = new TextLabAdminService();
+        private readonly LLMCenterAuthService _authService = new LLMCenterAuthService();
+        private readonly TextLabAdminService _adminService;
+        private TextLabApiService? _apiService;
+        private CancellationTokenSource? _refreshCancellationTokenSource;
         private ObservableCollection<Repository> _repositories = new ObservableCollection<Repository>();
         private Repository? _selectedRepository;
         private readonly string _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "textlab_debug.log");
 
         public MainWindow()
         {
+            InitializeComponent();
+            
+            // Initialiser les services avec dépendance
+            _apiService = new TextLabApiService(_authService);
+            _adminService = new TextLabAdminService("https://textlab-api.onrender.com", _authService);
+            
+            // Initialisation
+            LogDebug("Application démarrée - Initialisation");
+            LogDebug($"Fichier de log: {_logFilePath}");
+            LoadSettings();
+            SetStatus("Application démarrée");
+            RepositoriesListBox.ItemsSource = _repositories;
+            
+            // Test de référence des boutons
+            TestButtonReferences();
+            
+            // Attacher l'événement Expanded au TreeView
+            DocumentsTreeView.Loaded += DocumentsTreeView_Loaded;
+            
+            // Attacher l'événement de chargement pour l'authentification
+            this.Loaded += MainWindow_Loaded;
+        }
+
+        /// <summary>
+        /// Événement déclenché quand la fenêtre principale se charge
+        /// </summary>
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // 🔄 NOUVEAU: Ne plus faire d'initialisation automatique
+            // L'utilisateur doit explicitement cliquer "Connecter"
+            SetStatus("Application démarrée - Cliquez 'Connecter' pour commencer");
+            await LoggingService.LogInfoAsync("🚀 Application démarrée - En attente de connexion manuelle");
+        }
+
+        /// <summary>
+        /// Affiche la fenêtre de connexion et gère l'authentification
+        /// </summary>
+        private async Task ShowLoginDialogAsync()
+        {
             try
             {
-                InitializeComponent();
+                var loginWindow = new LoginWindow(_authService);
+                loginWindow.Owner = this;
                 
-                // Initialisation
-                LogDebug("Application démarrée - Initialisation");
-                LogDebug($"Fichier de log: {_logFilePath}");
-                LoadSettings();
-                SetStatus("Application démarrée");
-                RepositoriesListBox.ItemsSource = _repositories;
+                var result = loginWindow.ShowDialog();
                 
-                // Test de référence des boutons
-                TestButtonReferences();
-                
-                // Attacher l'événement Expanded au TreeView
-                DocumentsTreeView.Loaded += DocumentsTreeView_Loaded;
+                if (result == true && loginWindow.LoginSuccessful)
+                {
+                    await LoggingService.LogInfoAsync("✅ Connexion utilisateur réussie");
+                    
+                    var userInfo = await _authService.GetCurrentUserAsync();
+                    if (userInfo != null)
+                    {
+                        SetStatus($"Connecté en tant que {userInfo.Username}");
+                        await LoggingService.LogInfoAsync($"👤 Utilisateur connecté: {userInfo.Username}");
+                        
+                        // Charger les repositories après connexion
+                        await LoadRepositories();
+                    }
+                }
+                else
+                {
+                    await LoggingService.LogWarningAsync("❌ Connexion annulée par l'utilisateur");
+                    SetStatus("Connexion annulée - Fonctionnalités limitées");
+                    
+                    // Possibilité de fermer l'application ou continuer en mode limité
+                    var response = MessageBox.Show(
+                        "Sans authentification, l'accès aux données TextLab est limité.\n\nVoulez-vous réessayer de vous connecter ?",
+                        "Authentification requise",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+                    
+                    if (response == MessageBoxResult.Yes)
+                    {
+                        await ShowLoginDialogAsync(); // Récursif
+                    }
+                }
             }
             catch (Exception ex)
             {
-                LogDebug($"Erreur d'initialisation: {ex.Message}");
-                MessageBox.Show($"Erreur d'initialisation:\n{ex.Message}", 
+                await LoggingService.LogErrorAsync($"❌ Erreur fenêtre de connexion: {ex.Message}");
+                MessageBox.Show($"Erreur lors de la connexion:\n{ex.Message}", 
                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -357,15 +421,32 @@ namespace TextLabClient
         {
             try
             {
-                TestConnectionButton.IsEnabled = false;
+                SetConnectionStatus("⏳ Connexion...");
                 SetStatus("Test de connexion en cours...");
-                SetConnectionStatus("Test...");
                 
-                // Sauvegarder l'URL
-                SaveSettings();
+                // 1. AUTHENTIFICATION D'ABORD
+                if (!_authService.IsAuthenticated())
+                {
+                    await LoggingService.LogInfoAsync("⚠️ Utilisateur non authentifié - ouverture de la fenêtre de connexion");
+                    
+                    await ShowLoginDialogAsync();
+                    
+                    if (!_authService.IsAuthenticated())
+                    {
+                        SetConnectionStatus("❌ Non authentifié");
+                        SetStatus("Connexion annulée - authentification requise");
+                        return;
+                    }
+                }
                 
-                // Tester la connexion
+                var userInfo = await _authService.GetCurrentUserAsync();
+                await LoggingService.LogInfoAsync($"👤 Utilisateur connecté: {userInfo?.Username ?? "Inconnu"}");
+                
+                // 2. CONFIGURATION DE L'URL API
+                await LoggingService.LogInfoAsync($"🌐 Configuration API vers: {ApiUrlTextBox.Text}");
                 _apiService.SetBaseUrl(ApiUrlTextBox.Text);
+                
+                // 3. TEST DE CONNEXION API
                 var healthInfo = await _apiService.TestConnectionAsync();
                 
                 if (healthInfo != null)
@@ -373,24 +454,29 @@ namespace TextLabClient
                     SetConnectionStatus("✅ Connecté");
                     ApiVersionText.Text = $"API v{healthInfo.Version ?? "N/A"}";
                     
-                    // URL déjà visible dans le champ ApiUrlTextBox
+                    var statusMessage = $"Connexion réussie en tant que {userInfo?.Username ?? "utilisateur"}";
+                    if (!string.IsNullOrEmpty(healthInfo.Version))
+                        statusMessage += $" (API v{healthInfo.Version})";
+                    if (!string.IsNullOrEmpty(healthInfo.Environment))
+                        statusMessage += $" [{healthInfo.Environment}]";
                     
-                    SetStatus("Connexion réussie");
+                    SetStatus(statusMessage);
+                    await LoggingService.LogInfoAsync($"✅ Connexion API réussie - {statusMessage}");
                     
-                    // Activer les boutons qui nécessitent une connexion
+                    // 4. ACTIVER LES FONCTIONNALITÉS
                     EnableConnectionButtons(true);
                     
-                    // Charger automatiquement les repositories
+                    // 5. CHARGER LES REPOSITORIES
                     await LoadRepositories();
                 }
                 else
                 {
                     SetConnectionStatus("❌ Échec");
                     ApiVersionText.Text = "";
-                    SetStatus("Échec de la connexion");
+                    SetStatus("Échec de la connexion API");
                     _repositories.Clear();
+                    await LoggingService.LogErrorAsync("❌ Échec de connexion à l'API TextLab");
                     
-                    // Désactiver les boutons qui nécessitent une connexion
                     EnableConnectionButtons(false);
                 }
             }
@@ -401,10 +487,7 @@ namespace TextLabClient
                 SetStatus($"Erreur de connexion: {ex.Message}");
                 _repositories.Clear();
                 EnableConnectionButtons(false);
-            }
-            finally
-            {
-                TestConnectionButton.IsEnabled = true;
+                await LoggingService.LogErrorAsync($"❌ Erreur lors de la connexion: {ex.Message}");
             }
         }
 
@@ -493,8 +576,8 @@ namespace TextLabClient
             try
             {
                 SetStatus("Chargement des repositories...");
-                // Utiliser les nouveaux endpoints publics
-                var repositories = await _apiService.GetPublicRepositoriesAsync();
+                // 🔐 Utiliser l'endpoint authentifié (pas "public")
+                var repositories = await _apiService.GetRepositoriesAsync();
                 
                 _repositories.Clear();
                 
@@ -1574,6 +1657,104 @@ namespace TextLabClient
             SyncRepositoryButton.IsEnabled = hasRepository;
             
             LogDebug($"🔧 Boutons mis à jour - Repository: {hasRepository}, Document: {hasSelectedDocument}");
+        }
+
+        private async void ShowTokenButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync("🔑 === AFFICHAGE TOKEN DEBUG ===");
+
+                var tokenInfo = new System.Text.StringBuilder();
+                tokenInfo.AppendLine("=== DEBUG AUTHENTIFICATION ===\n");
+
+                // Vérifier l'état d'authentification
+                bool isAuth = _authService.IsAuthenticated();
+                tokenInfo.AppendLine($"🔐 Authentifié : {isAuth}");
+
+                if (isAuth)
+                {
+                    // Récupérer le token
+                    var token = await _authService.GetBearerTokenAsync();
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        tokenInfo.AppendLine($"🎫 Token présent : OUI ({token.Length} caractères)");
+                        tokenInfo.AppendLine($"🎫 Token (premiers 50 chars) : {token.Substring(0, Math.Min(50, token.Length))}...");
+                        
+                        // Informations utilisateur
+                        var userInfo = await _authService.GetCurrentUserAsync();
+                        if (userInfo != null)
+                        {
+                            tokenInfo.AppendLine($"👤 Utilisateur : {userInfo.Username}");
+                            tokenInfo.AppendLine($"📧 Email : {userInfo.Email}");
+                            tokenInfo.AppendLine($"🏷️ Rôle : {userInfo.Role}");
+                        }
+                        
+                        tokenInfo.AppendLine($"\n=== HEADERS ENVOYÉS À L'API ===");
+                        tokenInfo.AppendLine($"X-User-Token: {token.Substring(0, Math.Min(30, token.Length))}...");
+                        tokenInfo.AppendLine($"User-Agent: TextLabClient/2.0");
+                        
+                        tokenInfo.AppendLine($"\n=== URL D'API ===");
+                        tokenInfo.AppendLine($"🌐 URL : {ApiUrlTextBox.Text}");
+                        
+                        tokenInfo.AppendLine($"\n=== POUR TESTER MANUELLEMENT ===");
+                        tokenInfo.AppendLine($"curl -H \"X-User-Token: {token}\" \\");
+                        tokenInfo.AppendLine($"     \"{ApiUrlTextBox.Text}/api/v1/repositories\"");
+                        
+                        tokenInfo.AppendLine($"\n=== TOKEN COMPLET ===");
+                        tokenInfo.AppendLine($"{token}");
+                    }
+                    else
+                    {
+                        tokenInfo.AppendLine("❌ Token présent : NON");
+                    }
+                }
+                else
+                {
+                    tokenInfo.AppendLine("❌ Pas d'authentification");
+                    tokenInfo.AppendLine("ℹ️ Utilisez d'abord le bouton Connecter pour vous authentifier");
+                }
+
+                // Afficher dans une nouvelle fenêtre
+                var tokenWindow = new Window
+                {
+                    Title = "🔑 Debug Token - TextLab Client",
+                    Width = 900,
+                    Height = 700,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this
+                };
+
+                var scrollViewer = new System.Windows.Controls.ScrollViewer
+                {
+                    VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                    Padding = new Thickness(15)
+                };
+
+                var textBlock = new System.Windows.Controls.TextBlock
+                {
+                    Text = tokenInfo.ToString(),
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas, Courier New"),
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Background = System.Windows.Media.Brushes.Black,
+                    Foreground = System.Windows.Media.Brushes.LimeGreen,
+                    Padding = new Thickness(10)
+                };
+
+                scrollViewer.Content = textBlock;
+                tokenWindow.Content = scrollViewer;
+                
+                tokenWindow.Show();
+
+                await LoggingService.LogInfoAsync("✅ Fenêtre de debug token affichée");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur affichage token: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'affichage du token:\n{ex.Message}", 
+                              "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         protected override void OnClosed(EventArgs e)

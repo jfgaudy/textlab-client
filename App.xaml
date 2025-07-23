@@ -15,6 +15,7 @@
         <SolidColorBrush x:Key="BackgroundBrush" Color="#F5F5F5"/>
         <SolidColorBrush x:Key="CardBrush" Color="White"/>
         <SolidColorBrush x:Key="BorderBrush" Color="#E1E1E1"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#666666"/>
         
         <!-- Style de bouton moderne -->
         <Style x:Key="ModernButton" TargetType="Button">
@@ -90,7 +91,7 @@
         <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}"/>
 
         <!-- Style de ComboBox moderne -->
-        <Style TargetType="ComboBox">
+        <Style x:Key="ModernComboBox" TargetType="ComboBox">
             <Setter Property="Padding" Value="8"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -102,6 +103,9 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <!-- Style de ComboBox par défaut hérite du moderne -->
+        <Style TargetType="ComboBox" BasedOn="{StaticResource ModernComboBox}"/>
 
         <!-- Style de GroupBox moderne -->
         <Style TargetType="GroupBox">

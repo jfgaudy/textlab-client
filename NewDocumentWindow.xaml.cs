@@ -256,8 +256,13 @@ namespace TextLabClient
                 {
                     var title = DocumentTitleTextBox.Text?.Trim();
                     var category = (CategoryComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() 
-                                  ?? CategoryComboBox.Text?.Trim() 
-                                  ?? "docs";
+                                  ?? CategoryComboBox.Text?.Trim();
+                    
+                    // 🔧 CORRECTION: Ne pas forcer "docs" si vide, laisser vraiment vide
+                    if (string.IsNullOrWhiteSpace(category))
+                    {
+                        category = null;
+                    }
 
                     if (!string.IsNullOrEmpty(title))
                     {
@@ -275,7 +280,15 @@ namespace TextLabClient
                             .Replace("|", "")
                             .ToLower();
 
-                        filePath = $"documents/{category}/{fileName}.md";
+                        // 🔧 CORRECTION: Éviter les doubles slashes si category est vide
+                        if (!string.IsNullOrEmpty(category))
+                        {
+                            filePath = $"documents/{category}/{fileName}.md";
+                        }
+                        else
+                        {
+                            filePath = $"documents/{fileName}.md";
+                        }
                     }
                     else
                     {
@@ -350,8 +363,13 @@ namespace TextLabClient
                 CreateButton.Content = "⏳ Création...";
 
                 var category = (CategoryComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() 
-                              ?? CategoryComboBox.Text?.Trim() 
-                              ?? "docs";
+                              ?? CategoryComboBox.Text?.Trim();
+                
+                // 🔧 CORRECTION: Ne pas forcer "docs" si vide, utiliser null pour pas de catégorie
+                if (string.IsNullOrWhiteSpace(category))
+                {
+                    category = null;
+                }
 
                 var filePath = FilePathTextBox.Text?.Trim();
                 if (string.IsNullOrEmpty(filePath))
@@ -371,7 +389,15 @@ namespace TextLabClient
                         .Replace("|", "")
                         .ToLower();
 
-                    filePath = $"documents/{category}/{fileName}.md";
+                    // 🔧 CORRECTION: Éviter les doubles slashes si category est vide
+                    if (!string.IsNullOrEmpty(category))
+                    {
+                        filePath = $"documents/{category}/{fileName}.md";
+                    }
+                    else
+                    {
+                        filePath = $"documents/{fileName}.md";
+                    }
                 }
 
                 // Créer le document

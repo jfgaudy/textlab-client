@@ -13,10 +13,45 @@ namespace TextLabClient.Services
     {
         private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
         private readonly string _baseUrl;
+        private readonly LLMCenterAuthService _authService;
 
-        public TextLabAdminService(string baseUrl = "https://textlab-api.onrender.com")
+        public TextLabAdminService(string baseUrl, LLMCenterAuthService authService)
         {
             _baseUrl = baseUrl.TrimEnd('/');
+            _authService = authService;
+        }
+
+        /// <summary>
+        /// Crée une requête HTTP avec les headers d'authentification requis
+        /// </summary>
+        private async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(HttpMethod method, string endpoint)
+        {
+            var request = new HttpRequestMessage(method, $"{_baseUrl}{endpoint}");
+            
+            if (!_authService.IsAuthenticated())
+            {
+                throw new UnauthorizedAccessException("Utilisateur non authentifié pour les opérations admin");
+            }
+
+            var token = await _authService.GetBearerTokenAsync();
+            if (string.IsNullOrEmpty(token))
+            {
+                throw new UnauthorizedAccessException("Token d'authentification manquant pour admin");
+            }
+
+            request.Headers.Add("X-User-Token", token);
+            await LoggingService.LogInfoAsync($"🔐 Requête admin authentifiée créée vers: {_baseUrl}{endpoint}");
+            return request;
+        }
+
+        /// <summary>
+        /// Envoie une requête authentifiée et retourne la réponse
+        /// </summary>
+        private async Task<HttpResponseMessage> SendAuthenticatedRequestAsync(HttpRequestMessage request)
+        {
+            var response = await _httpClient.SendAsync(request);
+            await LoggingService.LogInfoAsync($"📨 Réponse admin reçue: {response.StatusCode}");
+            return response;
         }
 
         // ===== GESTION DES REPOSITORIES =====
@@ -28,7 +63,9 @@ namespace TextLabClient.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/admin/repositories");
+                // 🔐 CORRECTION: Utiliser l'authentification pour les opérations admin
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, "/api/v1/admin/repositories");
+                var response = await SendAuthenticatedRequestAsync(request);
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync();
