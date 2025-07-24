@@ -37,64 +37,7 @@ namespace TextLabClient.Services
             System.Diagnostics.Debug.WriteLine("🔐 LLMCenterAuthService initialisé - Token vidé");
         }
 
-        /// <summary>
-        /// Définit un token directement sans passer par LLM Center (bypass)
-        /// </summary>
-        public async Task<bool> SetTokenDirectlyAsync(string token)
-        {
-            try
-            {
-                await LoggingService.LogInfoAsync($"🎯 Application token direct (bypass LLM Center)");
-                
-                // Valider que c'est bien un JWT
-                var parts = token.Split('.');
-                if (parts.Length != 3)
-                {
-                    await LoggingService.LogErrorAsync("❌ Token malformé - doit être un JWT (3 parties)");
-                    return false;
-                }
-                
-                // Essayer de décoder le payload pour validation
-                try
-                {
-                    var payload = parts[1];
-                    var paddedPayload = payload + new string('=', (4 - payload.Length % 4) % 4);
-                    var decodedBytes = Convert.FromBase64String(paddedPayload);
-                    var jsonPayload = System.Text.Encoding.UTF8.GetString(decodedBytes);
-                    
-                    using var tokenDoc = JsonDocument.Parse(jsonPayload);
-                    var tokenRoot = tokenDoc.RootElement;
-                    
-                    // Extraire les infos du token
-                    string? username = tokenRoot.TryGetProperty("sub", out var subElement) ? subElement.GetString() : "unknown";
-                    string? email = tokenRoot.TryGetProperty("email", out var emailElement) ? emailElement.GetString() : "unknown";
-                    
-                    await LoggingService.LogInfoAsync($"🎯 Token utilisateur: {username} ({email})");
-                    
-                    // Stocker le token
-                    _accessToken = token;
-                    
-                    // Pour les tokens directs, on ignore l'expiration (contournement)
-                    _tokenExpiry = DateTime.UtcNow.AddHours(24); // 24h de validité arbitraire
-                    
-                    // Sauvegarder
-                    SaveTokenToSettings(_accessToken, _tokenExpiry);
-                    
-                    await LoggingService.LogInfoAsync("✅ Token direct appliqué avec succès");
-                    return true;
-                }
-                catch (Exception parseEx)
-                {
-                    await LoggingService.LogErrorAsync($"❌ Erreur décodage token: {parseEx.Message}");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                await LoggingService.LogErrorAsync($"❌ Erreur application token direct: {ex.Message}");
-                return false;
-            }
-        }
+
 
         /// <summary>
         /// Authentifie un utilisateur auprès de LLM Center

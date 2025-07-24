@@ -217,13 +217,37 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📝 Contenu du Document" FontSize="16" FontWeight="Bold" 
                                       Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
-                            <Button Name="CopyContentButton" Content="📋 Copier" 
-                                   Style="{StaticResource SecondaryButton}" Click="CopyContentButton_Click" 
-                                   Margin="20,0,0,0"/>
+                            
+                            <!-- Mode lecture -->
+                            <StackPanel Name="ReadModeButtons" Orientation="Horizontal" Margin="20,0,0,0">
+                                <Button Name="EditDocumentButton" Content="✏️ Éditer" 
+                                       Style="{StaticResource ModernButton}" Click="EditDocumentButton_Click" 
+                                       Margin="0,0,10,0"/>
+                                <Button Name="CopyContentButton" Content="📋 Copier" 
+                                       Style="{StaticResource SecondaryButton}" Click="CopyContentButton_Click" 
+                                       Margin="0,0,10,0"/>
+                            </StackPanel>
+                            
+                            <!-- Mode édition -->
+                            <StackPanel Name="EditModeButtons" Orientation="Horizontal" Margin="20,0,0,0" Visibility="Collapsed">
+                                <Button Name="SaveDocumentButton" Content="💾 Enregistrer" 
+                                       Style="{StaticResource ModernButton}" Click="SaveDocumentButton_Click" 
+                                       Margin="0,0,10,0"/>
+                                <Button Name="CancelEditButton" Content="❌ Annuler" 
+                                       Style="{StaticResource SecondaryButton}" Click="CancelEditButton_Click" 
+                                       Margin="0,0,10,0"/>
+                            </StackPanel>
+                            
+                            <TextBlock Name="EditModeIndicator" Text="✏️ Mode Édition" 
+                                      FontWeight="Bold" Foreground="Orange" VerticalAlignment="Center" 
+                                      Margin="15,0,0,0" Visibility="Collapsed"/>
+                            
                             <TextBlock Name="ContentSizeText" Text="" VerticalAlignment="Center" 
                                       Margin="15,0,0,0" FontSize="12" Foreground="Gray"/>
                         </StackPanel>
                     </Border>
+                    
+                    <!-- Pas d'édition de titre - seul le contenu est éditable -->
                     
                     <!-- Zone de contenu -->
                     <Border Grid.Row="1" Style="{StaticResource Card}" Margin="20,10,20,20">

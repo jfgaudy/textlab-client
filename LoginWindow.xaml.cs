@@ -48,87 +48,57 @@ namespace TextLabClient
         {
             try
             {
-                // 🎯 NOUVELLE LOGIQUE: Vérifier quel mode utiliser
-                string tokenDirect = TokenTextBox.Text.Trim();
-                
-                if (!string.IsNullOrWhiteSpace(tokenDirect))
+                // Validation des champs
+                if (string.IsNullOrWhiteSpace(EmailTextBox.Text))
                 {
-                    // MODE TOKEN DIRECT - Bypass LLM Center
-                    ShowLoading("Application du token direct...");
+                    ShowError("Veuillez saisir votre email");
+                    EmailTextBox.Focus();
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(PasswordBox.Password))
+                {
+                    ShowError("Veuillez saisir votre mot de passe");
+                    PasswordBox.Focus();
+                    return;
+                }
+
+                // Affichage du loading
+                ShowLoading("Connexion en cours...");
+
+                // Tentative de connexion
+                var success = await _authService.LoginAsync(EmailTextBox.Text.Trim(), PasswordBox.Password);
+
+                if (success)
+                {
+                    // Récupérer les infos utilisateur pour affichage
+                    var userInfo = await _authService.GetCurrentUserAsync();
                     
-                    // Sauvegarder directement le token sans appeler LLM Center
-                    bool tokenSet = await _authService.SetTokenDirectlyAsync(tokenDirect);
+                    ShowSuccess($"Connexion réussie ! Bienvenue {userInfo?.Username ?? "utilisateur"}");
                     
-                    if (tokenSet)
+                    // Attendre un peu pour que l'utilisateur voit le message
+                    await System.Threading.Tasks.Task.Delay(1000);
+                    
+                    _loginSuccessful = true;
+                    
+                    // Sauvegarder les credentials si demandé
+                    if (RememberMeCheckBox.IsChecked == true)
                     {
-                        ShowSuccess("Token appliqué avec succès ! Connexion directe.");
-                        await System.Threading.Tasks.Task.Delay(1000);
-                        _loginSuccessful = true;
-                        DialogResult = true;
-                        Close();
-                        return;
+                        SaveCredentials();
                     }
                     else
                     {
-                        ShowError("Erreur: Token JWT invalide ou malformé");
-                        return;
+                        ClearSavedCredentials();
                     }
+                    
+                    DialogResult = true;
+                    Close();
                 }
                 else
                 {
-                    // MODE AUTHENTIFICATION CLASSIQUE LLM CENTER
-                    // Validation des champs
-                    if (string.IsNullOrWhiteSpace(EmailTextBox.Text))
-                    {
-                        ShowError("Veuillez saisir votre email OU un token direct");
-                        EmailTextBox.Focus();
-                        return;
-                    }
-
-                    if (string.IsNullOrEmpty(PasswordBox.Password))
-                    {
-                        ShowError("Veuillez saisir votre mot de passe OU un token direct");
-                        PasswordBox.Focus();
-                        return;
-                    }
-
-                    // Affichage du loading
-                    ShowLoading("Connexion LLM Center en cours...");
-
-                    // Tentative de connexion
-                    var success = await _authService.LoginAsync(EmailTextBox.Text.Trim(), PasswordBox.Password);
-
-                    if (success)
-                    {
-                        // Récupérer les infos utilisateur pour affichage
-                        var userInfo = await _authService.GetCurrentUserAsync();
-                        
-                        ShowSuccess($"Connexion LLM Center réussie ! Bienvenue {userInfo?.Username ?? "utilisateur"}");
-                        
-                        // Attendre un peu pour que l'utilisateur voit le message
-                        await System.Threading.Tasks.Task.Delay(1000);
-                        
-                        _loginSuccessful = true;
-                        
-                        // Sauvegarder les credentials si demandé
-                        if (RememberMeCheckBox.IsChecked == true)
-                        {
-                            SaveCredentials();
-                        }
-                        else
-                        {
-                            ClearSavedCredentials();
-                        }
-                        
-                        DialogResult = true;
-                        Close();
-                    }
-                    else
-                    {
-                        ShowError("Échec connexion LLM Center. Vérifiez vos identifiants ou utilisez un token direct.");
-                        PasswordBox.Clear();
-                        PasswordBox.Focus();
-                    }
+                    ShowError("Échec de la connexion. Vérifiez vos identifiants.");
+                    PasswordBox.Clear();
+                    PasswordBox.Focus();
                 }
             }
             catch (Exception ex)
@@ -189,17 +159,15 @@ namespace TextLabClient
         {
             try
             {
-                // Sauvegarder seulement l'email (pas le mot de passe pour la sécurité)
                 if (Properties.Settings.Default != null)
                 {
-                    Properties.Settings.Default.LastUserEmail = EmailTextBox.Text.Trim();
                     Properties.Settings.Default.RememberUser = true;
+                    Properties.Settings.Default.LastUserEmail = EmailTextBox.Text.Trim();
                     Properties.Settings.Default.Save();
                 }
             }
             catch (Exception ex)
             {
-                // Log mais ne pas bloquer l'application
                 System.Diagnostics.Debug.WriteLine($"❌ Erreur sauvegarde credentials: {ex.Message}");
             }
         }
@@ -210,15 +178,14 @@ namespace TextLabClient
             {
                 if (Properties.Settings.Default != null)
                 {
-                    Properties.Settings.Default.LastUserEmail = string.Empty;
                     Properties.Settings.Default.RememberUser = false;
+                    Properties.Settings.Default.LastUserEmail = string.Empty;
                     Properties.Settings.Default.Save();
                 }
             }
             catch (Exception ex)
             {
-                // Log mais ne pas bloquer l'application
-                System.Diagnostics.Debug.WriteLine($"❌ Erreur nettoyage credentials: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"❌ Erreur suppression credentials: {ex.Message}");
             }
         }
 
@@ -250,8 +217,7 @@ namespace TextLabClient
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
-            // Temporairement désactivé pour éviter les blocages
-            // LoadSavedCredentials();
+            LoadSavedCredentials();
         }
     }
 } 

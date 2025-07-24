@@ -55,9 +55,8 @@ namespace TextLabClient
         /// </summary>
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // 🔄 NOUVEAU: Ne plus faire d'initialisation automatique
             // L'utilisateur doit explicitement cliquer "Connecter"
-            SetStatus("Application démarrée - Cliquez 'Connecter' pour commencer");
+            SetStatus("Application démarrée - Cliquez 'Connecter' pour vous authentifier et accéder aux repositories");
             await LoggingService.LogInfoAsync("🚀 Application démarrée - En attente de connexion manuelle");
         }
 
@@ -80,11 +79,11 @@ namespace TextLabClient
                     var userInfo = await _authService.GetCurrentUserAsync();
                     if (userInfo != null)
                     {
-                        SetStatus($"Connecté en tant que {userInfo.Username}");
+                        SetStatus($"Connecté en tant que {userInfo.Username} - Testez la connexion API");
                         await LoggingService.LogInfoAsync($"👤 Utilisateur connecté: {userInfo.Username}");
                         
-                        // Charger les repositories après connexion
-                        await LoadRepositories();
+                        // ❌ SUPPRIMÉ: Ne plus charger les repositories ici pour éviter le double chargement
+                        // Les repositories seront chargés uniquement via le bouton "Connecter"
                     }
                 }
                 else

@@ -27,14 +27,10 @@ namespace TextLabClient
         private readonly string? _specificVersionSha;
         private readonly bool _isViewingSpecificVersion;
 
-        // Variables pour le mode édition - SUPPRIMÉES car interface d'édition supprimée
-        // private bool _isEditMode = false;
-        // private string _originalTitle = "";
-        // private string _originalContent = "";
-        // private const string DEFAULT_AUTHOR = "TextLab Client";
-
-        // MÉTHODES D'ÉDITION SUPPRIMÉES - Interface d'édition retirée du XAML
-        // Les boutons SaveButton, EditModeButtons, TitleEditPanel, etc. n'existent plus
+        // Variables pour le mode édition - CONTENU SEULEMENT
+        private bool _isEditMode = false;
+        private string _originalContent = "";
+        private const string DEFAULT_AUTHOR = "TextLab Client";
 
         // Constructeur original pour la version actuelle
         public DocumentDetailsWindow(Document document, TextLabApiService apiService)
@@ -391,7 +387,7 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 
                 if (_documentVersions != null && _documentVersions.Versions.Count > 0)
                 {
-                    // Afficher les versions dans le DataGrid
+                    // Afficher les versions exactement comme retournées par l'API
                     VersionsDataGrid.ItemsSource = _documentVersions.Versions;
                     VersionCountText.Text = $"{_documentVersions.TotalVersions} version(s)";
                 }
@@ -399,13 +395,12 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 {
                     VersionCountText.Text = "Historique indisponible (API endpoint 404)";
                     
-                    // 🔧 CORRECTION: Créer un vrai DocumentVersion au lieu d'un objet anonyme
                     var dummyVersions = new List<DocumentVersion>
                     {
                         new DocumentVersion
                         {
                             Version = "❌ Non disponible",
-                            CommitSha = "N/A",
+                            CommitSha = "N/A", 
                             Author = "API endpoint manquant",
                             Date = DateTime.Now,
                             Message = "L'endpoint /versions retourne 404 Not Found",
@@ -1397,6 +1392,198 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 MessageBox.Show($"Erreur lors de la copie de l'ID:\n{ex.Message}", 
                                "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // ===== MÉTHODES D'ÉDITION RESTAURÉES =====
+
+        private void EditDocumentButton_Click(object sender, RoutedEventArgs e)
+        {
+            EnableEditMode();
+        }
+
+        private async void SaveDocumentButton_Click(object sender, RoutedEventArgs e)
+        {
+            await SaveDocumentChanges();
+        }
+
+        private void CancelEditButton_Click(object sender, RoutedEventArgs e)
+        {
+            CancelEditMode();
+        }
+
+        private async void EnableEditMode()
+        {
+            try
+            {
+                // Vérifier qu'on n'est pas en train de visualiser une version spécifique
+                if (_isViewingSpecificVersion)
+                {
+                    MessageBox.Show("Impossible d'éditer une version spécifique.\n\nPour modifier ce document, retournez d'abord à la version actuelle.", 
+                                   "Édition non disponible", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                _isEditMode = true;
+                
+                // Sauvegarder le contenu original
+                _originalContent = DocumentContentTextBox.Text;
+                
+                // Basculer l'interface en mode édition
+                ReadModeButtons.Visibility = Visibility.Collapsed;
+                EditModeButtons.Visibility = Visibility.Visible;
+                EditModeIndicator.Visibility = Visibility.Visible;
+                
+                // Rendre le contenu éditable
+                DocumentContentTextBox.IsReadOnly = false;
+                DocumentContentTextBox.Background = new SolidColorBrush(Color.FromRgb(255, 255, 240)); // Fond légèrement jaune
+                DocumentContentTextBox.BorderThickness = new Thickness(2);
+                DocumentContentTextBox.BorderBrush = new SolidColorBrush(Colors.Orange);
+                
+                SetStatus("Mode édition activé - Modifiez le contenu du document");
+                await LoggingService.LogInfoAsync($"🎨 Mode édition activé pour le document: {_document.Title}");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de l'activation du mode édition: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'activation du mode édition:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task SaveDocumentChanges()
+        {
+            try
+            {
+                SetStatus("Validation des modifications...");
+                
+                // Récupérer le nouveau contenu (le titre reste inchangé)
+                var newContent = DocumentContentTextBox.Text;
+                
+                // Validation - permettre du contenu vide si l'utilisateur le veut
+                if (string.IsNullOrWhiteSpace(newContent))
+                {
+                    var confirmEmpty = MessageBox.Show("Le contenu est vide. Voulez-vous vraiment enregistrer un document vide ?", 
+                                                      "Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (confirmEmpty != MessageBoxResult.Yes)
+                        return;
+                }
+                
+                // Vérifier s'il y a vraiment des changements dans le contenu
+                bool contentChanged = newContent != _originalContent;
+                
+                if (!contentChanged)
+                {
+                    MessageBox.Show("Aucune modification du contenu détectée.", "Information", 
+                                   MessageBoxButton.OK, MessageBoxImage.Information);
+                    CancelEditMode();
+                    return;
+                }
+                
+                // Confirmation de la nouvelle version
+                var confirmResult = MessageBox.Show(
+                    $"💾 Créer une nouvelle version\n\n" +
+                    $"Modification détectée:\n" +
+                    $"• Contenu: {(_originalContent?.Length ?? 0)} → {newContent.Length} caractères\n\n" +
+                    $"Cette action créera une NOUVELLE VERSION du document.\n" +
+                    $"• Le titre restera: \"{_document.Title}\"\n" +
+                    $"• Le répertoire restera: {_document.RepositoryName}\n" +
+                    $"• Un nouveau commit Git sera créé\n\n" +
+                    $"Continuer?",
+                    "Confirmer la nouvelle version", 
+                    MessageBoxButton.YesNo, 
+                    MessageBoxImage.Question);
+                
+                if (confirmResult != MessageBoxResult.Yes)
+                    return;
+                
+                SetStatus("Création de la nouvelle version...");
+                SaveDocumentButton.IsEnabled = false;
+                
+                await LoggingService.LogInfoAsync($"💾 Création nouvelle version document: {_document.Id}");
+                
+                // Debug complet des paramètres
+                await LoggingService.LogDebugAsync($"🔍 UpdateDocument Debug:");
+                await LoggingService.LogDebugAsync($"  📄 Document ID: {_document.Id}");
+                await LoggingService.LogDebugAsync($"  👤 Author: {DEFAULT_AUTHOR}");
+                await LoggingService.LogDebugAsync($"  📝 Title: {_document.Title}");
+                await LoggingService.LogDebugAsync($"  📄 Content Length: {newContent?.Length ?? 0}");
+                await LoggingService.LogDebugAsync($"  🏷️ Category: {_document.Category}");
+                await LoggingService.LogDebugAsync($"  👁️ Visibility: {_document.Visibility}");
+                await LoggingService.LogDebugAsync($"  📁 Repository: {_document.RepositoryName} ({_document.RepositoryId})");
+                await LoggingService.LogDebugAsync($"  📂 Git Path: {_document.GitPath}");
+                
+                // Effectuer la mise à jour via l'API (GARDER LE TITRE ORIGINAL)
+                var updatedDocument = await _apiService.UpdateDocumentAsync(
+                    _document.Id,           // documentId
+                    DEFAULT_AUTHOR,         // author
+                    _document.Title,        // title (inchangé)
+                    newContent,             // content (modifié)
+                    _document.Category,     // category (inchangé)
+                    _document.Visibility    // visibility (inchangé)
+                );
+                
+                if (updatedDocument != null)
+                {
+                    SetStatus("Nouvelle version créée avec succès!");
+                    
+                    // Afficher un message de confirmation avec détails
+                    var successMessage = $"✅ Nouvelle version créée avec succès!\n\n" +
+                                       $"📄 Titre (inchangé): {updatedDocument.Title}\n" +
+                                       $"🔗 Nouveau commit: {updatedDocument.CurrentCommitSha}\n" +
+                                       $"📝 Nouvelle version ajoutée à l'historique Git.\n\n" +
+                                       $"La fenêtre va maintenant se recharger pour afficher la nouvelle version.";
+                    
+                    MessageBox.Show(successMessage, "Nouvelle version créée", 
+                                   MessageBoxButton.OK, MessageBoxImage.Information);
+                    
+                    await LoggingService.LogInfoAsync($"✅ Nouvelle version créée: commit {updatedDocument.CurrentCommitSha}");
+                    
+                    // IMPORTANT: Recharger complètement la fenêtre avec la nouvelle version
+                    _document = updatedDocument; // Mettre à jour l'objet document
+                    DisableEditMode();
+                    await LoadDocumentDetailsAsync(); // Recharger toutes les données
+                }
+                else
+                {
+                    throw new Exception("La sauvegarde a échoué - aucune donnée retournée");
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Erreur lors de l'enregistrement: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'enregistrement:\n{ex.Message}", 
+                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+                await LoggingService.LogErrorAsync($"❌ Erreur sauvegarde document: {ex.Message}");
+            }
+            finally
+            {
+                SaveDocumentButton.IsEnabled = true;
+            }
+        }
+
+        private void CancelEditMode()
+        {
+            // Restaurer le contenu original
+            DocumentContentTextBox.Text = _originalContent;
+            
+            DisableEditMode();
+            SetStatus("Modifications annulées");
+        }
+
+        private void DisableEditMode()
+        {
+            _isEditMode = false;
+            
+            // Basculer l'interface en mode lecture
+            ReadModeButtons.Visibility = Visibility.Visible;
+            EditModeButtons.Visibility = Visibility.Collapsed;
+            EditModeIndicator.Visibility = Visibility.Collapsed;
+            
+            // Rendre le contenu en lecture seule
+            DocumentContentTextBox.IsReadOnly = true;
+            DocumentContentTextBox.Background = Brushes.Transparent;
+            DocumentContentTextBox.BorderThickness = new Thickness(0);
+            DocumentContentTextBox.BorderBrush = Brushes.Transparent;
         }
     }
 } 

@@ -475,7 +475,10 @@ namespace TextLabClient.Services
                 System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - ID: {documentId}, Auteur: {author}");
                 System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - Données: {json}");
 
-                var response = await _httpClient.PutAsync($"{_baseUrl}/api/v1/documents/{documentId}?author={Uri.EscapeDataString(author)}", httpContent);
+                // 🔐 CORRECTION: Utiliser l'authentification pour modifier les documents
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Put, $"/api/v1/documents/{documentId}?author={Uri.EscapeDataString(author)}");
+                request.Content = httpContent;
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 var responseContent = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($"🔄 UpdateDocument - Status: {response.StatusCode}");
@@ -512,7 +515,9 @@ namespace TextLabClient.Services
             {
                 System.Diagnostics.Debug.WriteLine($"🗑️ DeleteDocument - ID: {documentId}");
 
-                var response = await _httpClient.DeleteAsync($"{_baseUrl}/api/v1/documents/{documentId}");
+                // 🔐 CORRECTION: Utiliser l'authentification pour supprimer les documents
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Delete, $"/api/v1/documents/{documentId}");
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 var responseContent = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($"🗑️ DeleteDocument - Status: {response.StatusCode}");
@@ -598,7 +603,10 @@ namespace TextLabClient.Services
 
                 System.Diagnostics.Debug.WriteLine($"⏮️ RestoreVersion - ID: {documentId}, Version: {version}, Auteur: {author}");
 
-                var response = await _httpClient.PostAsync($"{_baseUrl}/api/v1/documents/{documentId}/versions/restore", httpContent);
+                // 🔐 CORRECTION: Utiliser l'authentification pour restaurer les versions
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, $"/api/v1/documents/{documentId}/versions/restore");
+                request.Content = httpContent;
+                var response = await SendAuthenticatedRequestAsync(request);
                 
                 var responseContent = await response.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($"⏮️ RestoreVersion - Status: {response.StatusCode}");
