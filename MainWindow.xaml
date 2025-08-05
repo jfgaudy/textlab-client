@@ -22,16 +22,18 @@
                     <TextBlock Text="📚" FontSize="24" Margin="0,0,10,0" VerticalAlignment="Center"/>
                     <TextBlock Text="TextLab Client" FontSize="22" FontWeight="Bold" 
                               Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Text="Gestionnaire de Documents" FontSize="14" 
+                    <TextBlock Text="Document Manager" FontSize="14" 
                               Foreground="Gray" Margin="15,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="🏷️ Tags" Click="TagEditorButton_Click" 
+                           Style="{StaticResource SecondaryButton}"/>
                     <Button Content="📁 Repositories" Click="ManageRepositoriesButton_Click" 
                            Style="{StaticResource SecondaryButton}"/>
-                    <Button Content="🔄 Sync Tous" Click="SyncAllRepositoriesButton_Click" 
+                    <Button Content="🔄 Sync All" Click="SyncAllRepositoriesButton_Click" 
                            Style="{StaticResource SecondaryButton}"/>
-                    <Button Content="ℹ️ À propos" Click="AboutButton_Click" 
+                    <Button Content="ℹ️ About" Click="AboutButton_Click" 
                            Style="{StaticResource SecondaryButton}"/>
                 </StackPanel>
             </Grid>
@@ -39,12 +41,12 @@
 
         <!-- Menu principal -->
         <Menu DockPanel.Dock="Top" Background="{StaticResource CardBrush}" Padding="10,5">
-            <MenuItem Header="_Fichier">
+            <MenuItem Header="_File">
                 <MenuItem Click="NewDocumentButton_Click" InputGestureText="Ctrl+N">
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📝" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="_Nouveau Document"/>
+                            <TextBlock Text="_New Document"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
@@ -53,7 +55,18 @@
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="🔄" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="_Actualiser"/>
+                            <TextBlock Text="_Refresh"/>
+                        </StackPanel>
+                    </MenuItem.Header>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem Header="_Tags">
+                <MenuItem Click="TagEditorButton_Click">
+                    <MenuItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🏷️" FontSize="14" Margin="0,0,5,0"/>
+                            <TextBlock Text="Tag Editor"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
@@ -64,7 +77,7 @@
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="⚙️" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="Gestion des Repositories"/>
+                            <TextBlock Text="Repository Management"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
@@ -72,18 +85,18 @@
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📥" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="Synchroniser Tous"/>
+                            <TextBlock Text="Sync All"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
             </MenuItem>
 
-            <MenuItem Header="_Aide">
+            <MenuItem Header="_Help">
                 <MenuItem Click="AboutButton_Click">
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="ℹ️" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="À _propos"/>
+                            <TextBlock Text="_About"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
@@ -91,7 +104,7 @@
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📝" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="Voir les _Logs"/>
+                            <TextBlock Text="View _Logs"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
@@ -99,7 +112,7 @@
                     <MenuItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="🧹" FontSize="14" Margin="0,0,5,0"/>
-                            <TextBlock Text="_Vider les Logs"/>
+                            <TextBlock Text="_Clear Logs"/>
                         </StackPanel>
                     </MenuItem.Header>
                 </MenuItem>
@@ -117,7 +130,7 @@
             <!-- Connection Card -->
             <Border Grid.Row="0" Style="{StaticResource Card}" Margin="0,0,0,20">
                 <StackPanel>
-                    <TextBlock Text="🔗 Connexion API" FontSize="16" FontWeight="Bold" 
+                    <TextBlock Text="🔗 API Connection" FontSize="16" FontWeight="Bold" 
                               Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,15"/>
                     
                     <Grid>
@@ -133,7 +146,7 @@
                                 Text="http://localhost:8000" Margin="0,0,15,0"/>
                         
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
-                            <Button Name="TestConnectionButton" Content="🔗 Connecter" 
+                            <Button Name="TestConnectionButton" Content="🔗 Connect" 
                                    Click="TestConnectionButton_Click" Margin="0,0,10,0"/>
                             <Button Name="TestInitButton" Content="⚙️ Diagnostics"
                                    Click="TestInitButton_Click" Margin="0,0,10,0"/>
@@ -141,7 +154,7 @@
                                    Click="ShowTokenButton_Click" Margin="0,0,15,0"/>
                             <Ellipse Width="12" Height="12" Name="ConnectionStatusIndicator" 
                                     Fill="Gray" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <TextBlock Name="ConnectionStatusText" Text="Non testé" 
+                            <TextBlock Name="ConnectionStatusText" Text="Not tested" 
                                       VerticalAlignment="Center" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Grid>
@@ -196,9 +209,9 @@
                         
                         <!-- Repository Info -->
                         <StackPanel Grid.Row="2">
-                            <TextBlock Name="RepositoryInfoText" Text="Sélectionnez un repository" 
+                            <TextBlock Name="RepositoryInfoText" Text="Select a repository" 
                                       FontSize="12" Foreground="Gray" Margin="0,0,0,10" TextWrapping="Wrap"/>
-                            <Button Content="📋 Gérer Repositories" 
+                            <Button Content="📋 Manage Repositories" 
                                    Click="ManageRepositoriesButton_Click" Style="{StaticResource SecondaryButton}"/>
                         </StackPanel>
                     </Grid>
@@ -218,7 +231,7 @@
                             <TextBlock Name="SelectedRepositoryText" Text="📄 Documents" 
                                       FontSize="16" FontWeight="Bold" 
                                       Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
-                            <Button Name="LoadDocumentsButton" Content="📂 Charger" 
+                            <Button Name="LoadDocumentsButton" Content="📂 Load" 
                                    Click="LoadDocumentsButton_Click" IsEnabled="False" 
                                    Style="{StaticResource SecondaryButton}" Margin="15,0,0,0"/>
                         </StackPanel>
@@ -229,26 +242,26 @@
                             <WrapPanel Orientation="Horizontal">
                                 <!-- Document Actions -->
                                 <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
-                                    <Button x:Name="NewDocumentButton" Content="📄 Nouveau" 
+                                    <Button x:Name="NewDocumentButton" Content="📄 New" 
                                            Click="NewDocumentButton_Click" IsEnabled="False"
                                            Style="{StaticResource SuccessButton}" Height="30" Padding="8,4"/>
-                                    <Button x:Name="EditDocumentButton" Content="✏️ Éditer" 
+                                    <Button x:Name="EditDocumentButton" Content="✏️ Edit" 
                                            Click="EditDocumentButton_Click" IsEnabled="False" Height="30" Padding="8,4" Margin="5,0,0,0"
-                                           ToolTip="Ouvrir le document sélectionné en mode édition"/>
-                                    <Button x:Name="DeleteDocumentButton" Content="🗑️ Suppr." 
+                                           ToolTip="Open selected document in edit mode"/>
+                                    <Button x:Name="DeleteDocumentButton" Content="🗑️ Delete" 
                                            Click="DeleteDocumentButton_Click" IsEnabled="False" Height="30" Padding="8,4" Margin="5,0,0,0"
                                            Style="{StaticResource DangerButton}"
-                                           ToolTip="Supprimer le document sélectionné"/>
+                                           ToolTip="Delete selected document"/>
                                 </StackPanel>
                                 
                                 <!-- Repository Actions -->
                                 <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
                                     <Button x:Name="SyncRepositoryButton" Content="🔄 Sync" 
                                            Click="SyncRepositoryButton_Click" IsEnabled="False" Height="30" Padding="8,4"
-                                           ToolTip="Synchroniser avec le repository distant"/>
-                                    <Button x:Name="RefreshButton" Content="🔃 Actualiser" 
+                                           ToolTip="Sync with remote repository"/>
+                                    <Button x:Name="RefreshButton" Content="🔃 Refresh" 
                                            Click="RefreshButton_Click" Height="30" Padding="8,4" Margin="5,0,0,0"
-                                           ToolTip="Actualiser la liste des documents"/>
+                                           ToolTip="Refresh document list"/>
                                 </StackPanel>
                             </WrapPanel>
                         </Border>
@@ -300,16 +313,16 @@
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                         <Ellipse Width="8" Height="8" Fill="{StaticResource SuccessBrush}" 
                                 VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Name="StatusText" Text="Application démarrée" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                        <TextBlock Name="StatusText" Text="Application started" VerticalAlignment="Center" FontWeight="SemiBold"/>
                     </StackPanel>
                     
                     <!-- Info connexion (droite) -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <TextBlock Name="ApiVersionText" Text="API: Non connecté" 
+                        <TextBlock Name="ApiVersionText" Text="API: Not connected" 
                                   VerticalAlignment="Center" FontSize="11" Foreground="Gray" Margin="0,0,15,0"/>
                         <Ellipse Width="8" Height="8" Name="StatusBarConnectionIndicator" 
                                 Fill="Gray" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <TextBlock Name="StatusBarConnectionText" Text="Non testé" 
+                        <TextBlock Name="StatusBarConnectionText" Text="Not tested" 
                                   VerticalAlignment="Center" FontSize="11" Foreground="Gray"/>
                     </StackPanel>
                 </Grid>

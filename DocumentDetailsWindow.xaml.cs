@@ -32,6 +32,10 @@ namespace TextLabClient
         private string _originalContent = "";
         private const string DEFAULT_AUTHOR = "TextLab Client";
 
+        // Variables pour la gestion des tags
+        private List<DocumentTag> _documentTags = new List<DocumentTag>();
+        private List<Tag> _availableTags = new List<Tag>();
+
         // Constructeur original pour la version actuelle
         public DocumentDetailsWindow(Document document, TextLabApiService apiService)
         {
@@ -47,6 +51,12 @@ namespace TextLabClient
             
             // Charger les détails complets
             _ = LoadDocumentDetailsAsync();
+            
+            // Charger les tags du document
+            _ = LoadDocumentTagsAsync();
+            
+            // Initialiser le placeholder pour le champ de tag
+            InitializeTagPlaceholder();
         }
 
         // Nouveau constructeur pour une version spécifique
@@ -66,7 +76,7 @@ namespace TextLabClient
             _ = LoadDocumentDetailsAsync();
         }
 
-        private void InitializeDocumentInfo()
+        private async void InitializeDocumentInfo()
         {
             // Informations de base depuis le document fourni
             if (_isViewingSpecificVersion && _specificVersion != null)
@@ -84,7 +94,9 @@ namespace TextLabClient
                 DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
                     ? _document.RepositoryName 
                     : _document.RepositoryId;
-                DocumentGitPathText.Text = _document.GitPath ?? "";
+                // Afficher le chemin complet avec la racine du repository
+                var displayPath = await BuildFullDisplayPath(_document.GitPath, _document.RepositoryId);
+                DocumentGitPathText.Text = displayPath ?? _document.GitPath ?? "";
                 
                 // Informations de la version spécifique
                 DocumentVersionText.Text = !string.IsNullOrEmpty(_specificVersion.CommitSha) 
@@ -119,7 +131,9 @@ namespace TextLabClient
                 DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
                     ? _document.RepositoryName 
                     : _document.RepositoryId;
-                DocumentGitPathText.Text = _document.GitPath ?? "";
+                // Afficher le chemin complet avec la racine du repository
+                var displayPath = await BuildFullDisplayPath(_document.GitPath, _document.RepositoryId);
+                DocumentGitPathText.Text = displayPath ?? _document.GitPath ?? "";
                 DocumentVersionText.Text = !string.IsNullOrEmpty(_document.CurrentCommitSha) 
                     ? _document.CurrentCommitSha.Substring(0, Math.Min(8, _document.CurrentCommitSha.Length))
                     : (_document.Version ?? "N/A");
@@ -1585,5 +1599,445 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             DocumentContentTextBox.BorderThickness = new Thickness(0);
             DocumentContentTextBox.BorderBrush = Brushes.Transparent;
         }
+
+        /// <summary>
+        /// Construit le chemin complet pour l'affichage en ajoutant TOUJOURS la racine du repository
+        /// </summary>
+        private async Task<string?> BuildFullDisplayPath(string? gitPath, string repositoryId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(gitPath))
+                    return null;
+
+                // Récupérer la racine des documents depuis la configuration du repository
+                var documentsRoot = await _apiService.GetRepositoryDocumentsRootAsync(repositoryId);
+                
+                // S'assurer que la racine se termine par /
+                if (!documentsRoot.EndsWith("/"))
+                {
+                    documentsRoot += "/";
+                }
+
+                // TOUJOURS reconstruire le chemin complet : racine + chemin relatif
+                var fullPath = $"{documentsRoot}{gitPath}";
+                await LoggingService.LogDebugAsync($"🔧 Chemin reconstruit: {documentsRoot} + {gitPath} = {fullPath}");
+                return fullPath;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur construction chemin display: {ex.Message}");
+                return gitPath; // Fallback au chemin original
+            }
+        }
+
+        #region Tags Management
+
+        /// <summary>
+        /// Initialise le placeholder pour le champ de saisie de tag
+        /// </summary>
+        private void InitializeTagPlaceholder()
+        {
+            if (NewTagTextBox == null) return;
+            
+            // Définir le placeholder initial
+            NewTagTextBox.Text = NewTagTextBox.Tag?.ToString() ?? "Add a tag...";
+            NewTagTextBox.Foreground = new SolidColorBrush(Colors.Gray);
+            
+            // Gestion des événements pour le placeholder
+            NewTagTextBox.GotFocus += (s, e) =>
+            {
+                if (NewTagTextBox.Text == NewTagTextBox.Tag?.ToString())
+                {
+                    NewTagTextBox.Text = "";
+                    NewTagTextBox.Foreground = new SolidColorBrush(Colors.Black);
+                }
+            };
+            
+            NewTagTextBox.LostFocus += (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(NewTagTextBox.Text))
+                {
+                    NewTagTextBox.Text = NewTagTextBox.Tag?.ToString() ?? "";
+                    NewTagTextBox.Foreground = new SolidColorBrush(Colors.Gray);
+                }
+            };
+        }
+
+        /// <summary>
+        /// Charge les tags associés au document
+        /// </summary>
+        private async Task LoadDocumentTagsAsync()
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync($"🏷️ Chargement des tags pour le document {_document.Id}");
+                
+                // Test de connectivité de l'endpoint des tags
+                await LoggingService.LogInfoAsync("🔍 Test de connectivité vers l'API Tags...");
+                
+                // Charger les tags du document
+                _documentTags = await _apiService.GetDocumentTagsAsync(_document.Id) ?? new List<DocumentTag>();
+                await LoggingService.LogInfoAsync($"🔍 Tags existants du document: {_documentTags.Count}");
+                
+                // Charger tous les tags disponibles pour l'autocomplétion
+                _availableTags = await _apiService.GetTagsAsync() ?? new List<Tag>();
+                await LoggingService.LogInfoAsync($"🔍 Tags disponibles total: {_availableTags.Count}");
+                
+                // Mettre à jour l'affichage
+                UpdateTagsDisplay();
+                
+                await LoggingService.LogInfoAsync($"✅ {_documentTags.Count} tag(s) chargé(s) pour le document");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lors du chargement des tags: {ex.Message}");
+                await LoggingService.LogInfoAsync("🔄 Activation du mode démo pour les tags");
+                
+                // Mode démo : initialiser avec des données locales
+                InitializeDemoTags();
+                UpdateTagsDisplay();
+            }
+        }
+
+        /// <summary>
+        /// Initialise les tags en mode démo (sans API)
+        /// </summary>
+        private void InitializeDemoTags()
+        {
+            // Tags démo disponibles
+            _availableTags = new List<Tag>
+            {
+                new Tag { Id = "demo-1", Name = "Important", Type = "priority", Color = "#FF6B6B", Icon = "⭐", IsActive = true },
+                new Tag { Id = "demo-2", Name = "Draft", Type = "status", Color = "#FFA726", Icon = "📝", IsActive = true },
+                new Tag { Id = "demo-3", Name = "Review", Type = "status", Color = "#42A5F5", Icon = "👀", IsActive = true },
+                new Tag { Id = "demo-4", Name = "Complete", Type = "status", Color = "#66BB6A", Icon = "✅", IsActive = true },
+                new Tag { Id = "demo-5", Name = "Client", Type = "category", Color = "#AB47BC", Icon = "🏢", IsActive = true }
+            };
+            
+            // Aucun tag associé par défaut
+            _documentTags = new List<DocumentTag>();
+        }
+
+        /// <summary>
+        /// Met à jour l'affichage des tags dans l'interface
+        /// </summary>
+        private void UpdateTagsDisplay()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                ExistingTagsPanel.Children.Clear();
+                
+                if (_documentTags.Count == 0)
+                {
+                    var noTagsText = new TextBlock
+                    {
+                        Text = "No tags associated",
+                        Foreground = new SolidColorBrush(Colors.Gray),
+                        FontSize = 12,
+                        FontStyle = FontStyles.Italic,
+                        Margin = new Thickness(5)
+                    };
+                    ExistingTagsPanel.Children.Add(noTagsText);
+                }
+                else
+                {
+                    foreach (var docTag in _documentTags)
+                    {
+                        if (docTag.Tag != null)
+                        {
+                            CreateTagVisual(docTag);
+                        }
+                    }
+                }
+            });
+        }
+
+        /// <summary>
+        /// Crée l'élément visuel pour un tag
+        /// </summary>
+        private void CreateTagVisual(DocumentTag documentTag)
+        {
+            var tag = documentTag.Tag!;
+            
+            var border = new Border
+            {
+                Background = string.IsNullOrEmpty(tag.Color) ? 
+                    new SolidColorBrush(Colors.LightBlue) : 
+                    new SolidColorBrush((Color)ColorConverter.ConvertFromString(tag.Color)),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(2),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            
+            var stackPanel = new StackPanel 
+            { 
+                Orientation = Orientation.Horizontal 
+            };
+            
+            // Icône et nom du tag
+            var tagText = new TextBlock
+            {
+                Text = $"{tag.Icon} {tag.Name}",
+                Foreground = new SolidColorBrush(Colors.White),
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            
+            // Bouton de suppression
+            var removeButton = new Button
+            {
+                Content = "×",
+                Background = new SolidColorBrush(Colors.Transparent),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderThickness = new Thickness(0),
+                Width = 16,
+                Height = 16,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(5, 0, 0, 0),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            
+            removeButton.Click += async (s, e) => await RemoveTagFromDocument(documentTag.TagId);
+            
+            stackPanel.Children.Add(tagText);
+            stackPanel.Children.Add(removeButton);
+            border.Child = stackPanel;
+            
+            ExistingTagsPanel.Children.Add(border);
+        }
+
+        /// <summary>
+        /// Ajoute un tag au document
+        /// </summary>
+        private async Task AddTagToDocument(string tagName)
+        {
+            try
+            {
+                // Debug immédiat avec MessageBox pour voir si on arrive ici
+                            await LoggingService.LogDebugAsync($"🏷️ Début AddTagToDocument pour '{tagName}'");
+            await LoggingService.LogInfoAsync($"🏷️ Ajout du tag '{tagName}' au document");
+            await LoggingService.LogInfoAsync($"🔑 API Service disponible: {(_apiService != null ? "OUI" : "NON")}");
+                
+                // Chercher le tag existant
+                var existingTag = _availableTags.FirstOrDefault(t => 
+                    t.Name.Equals(tagName, StringComparison.OrdinalIgnoreCase));
+                
+                Tag? tagToAdd;
+                
+                if (existingTag == null)
+                {
+                    // Créer un nouveau tag
+                    await LoggingService.LogDebugAsync($"🆕 Création d'un nouveau tag '{tagName}'");
+                    
+                    await LoggingService.LogInfoAsync($"➕ Création du nouveau tag '{tagName}'");
+                    await LoggingService.LogInfoAsync($"📤 Payload tag: Name={tagName}, Type=custom");
+                    
+                    var newTag = new Tag
+                    {
+                        Name = tagName,
+                        Slug = tagName.ToLowerInvariant().Replace(" ", "-").Replace("_", "-"),
+                        Type = "custom",
+                        Color = "#0066CC",
+                        Icon = "🏷️",
+                        IsPublic = true,
+                        IsSystem = false,
+                        IsActive = true
+                    };
+                    
+                    await LoggingService.LogInfoAsync($"🌐 Appel API CreateTagAsync...");
+                    tagToAdd = await _apiService.CreateTagAsync(newTag);
+                    await LoggingService.LogInfoAsync($"📥 Réponse CreateTagAsync: {(tagToAdd != null ? $"Succès ID={tagToAdd.Id}" : "ECHEC")}");
+                    
+                    await LoggingService.LogDebugAsync($"🆕 CreateTagAsync terminé. Résultat: {(tagToAdd != null ? $"Succès ID={tagToAdd.Id}" : "ECHEC")}");
+                    
+                    if (tagToAdd == null)
+                    {
+                        await LoggingService.LogErrorAsync("❌ CreateTagAsync a retourné null");
+                        throw new Exception("Unable to create tag");
+                    }
+                    
+                    _availableTags.Add(tagToAdd);
+                    await LoggingService.LogInfoAsync($"✅ Tag '{tagName}' créé avec l'ID {tagToAdd.Id}");
+                }
+                else
+                {
+                    tagToAdd = existingTag;
+                    await LoggingService.LogInfoAsync($"📌 Utilisation du tag existant '{tagName}'");
+                }
+                
+                // Vérifier si le tag n'est pas déjà associé
+                if (_documentTags.Any(dt => dt.TagId == tagToAdd.Id))
+                {
+                    await LoggingService.LogWarningAsync($"⚠️ Tag '{tagName}' déjà associé au document");
+                    await LoggingService.LogWarningAsync($"⚠️ Tag '{tagName}' is already associated with this document!");
+                    return;
+                }
+                
+                await LoggingService.LogDebugAsync($"🔗 Tag '{tagName}' (ID: {tagToAdd.Id}) n'est PAS encore associé. Procédure d'association...");
+                
+                // Associer le tag au document
+                var documentTag = new DocumentTag
+                {
+                    TagId = tagToAdd.Id,
+                    DocumentId = _document.Id,
+                    Weight = 1.0,
+                    Confidence = 1.0,
+                    Source = "manual",
+                    CreatedAt = DateTime.UtcNow
+                    // Ne pas inclure Tag et Document dans la requête POST pour éviter les conflits
+                };
+                
+                await LoggingService.LogInfoAsync($"🔗 Tentative d'association du tag ID {tagToAdd.Id} au document {_document.Id}");
+                await LoggingService.LogInfoAsync($"📤 DocumentTag payload: TagId={documentTag.TagId}, DocumentId={documentTag.DocumentId}, Weight={documentTag.Weight}, Source={documentTag.Source}");
+                
+                await LoggingService.LogDebugAsync($"🔗 Appel AddDocumentTagsAsync avec TagId={documentTag.TagId}, DocumentId={documentTag.DocumentId}");
+                
+                var addedTags = await _apiService.AddDocumentTagsAsync(_document.Id, new List<DocumentTag> { documentTag });
+                
+                await LoggingService.LogInfoAsync($"📥 Réponse API: {addedTags?.Count ?? 0} tag(s) ajouté(s)");
+                
+                // Logging détaillé du résultat API
+                await LoggingService.LogDebugAsync($"🔗 AddDocumentTagsAsync terminé. Résultat: {addedTags?.Count ?? 0} tag(s)");
+                await LoggingService.LogDebugAsync($"🔍 addedTags == null: {addedTags == null}");
+                
+                if (addedTags != null)
+                {
+                    await LoggingService.LogDebugAsync($"🔍 Type de addedTags: {addedTags.GetType().Name}");
+                    await LoggingService.LogDebugAsync($"🔍 Contenu: [{string.Join(", ", addedTags.Select(t => $"TagId={t.TagId}"))}]");
+                }
+                
+                if (addedTags != null && addedTags.Count > 0)
+                {
+                    // Récupérer le tag ajouté et s'assurer qu'il a la référence complète au tag
+                    var addedTag = addedTags[0];
+                    addedTag.Tag = tagToAdd; // S'assurer que le tag complet est disponible
+                    _documentTags.Add(addedTag);
+                    UpdateTagsDisplay();
+                    await LoggingService.LogInfoAsync($"✅ Tag '{tagName}' associé au document");
+                }
+                else
+                {
+                    await LoggingService.LogErrorAsync("❌ L'API AddDocumentTagsAsync a retourné null ou liste vide");
+                    await LoggingService.LogErrorAsync($"❌ Vérifiez si l'endpoint /api/v1/documents/{_document.Id}/tags existe et fonctionne");
+                    throw new Exception("Unable to associate tag with document");
+                }
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lors de l'ajout du tag '{tagName}': {ex.Message}");
+                MessageBox.Show($"Error adding tag '{tagName}':\n{ex.Message}", 
+                               "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Retire un tag du document
+        /// </summary>
+        private async Task RemoveTagFromDocument(string tagId)
+        {
+            try
+            {
+                var tagToRemove = _documentTags.FirstOrDefault(dt => dt.TagId == tagId);
+                if (tagToRemove?.Tag == null) return;
+                
+                await LoggingService.LogInfoAsync($"🗑️ Suppression du tag '{tagToRemove.Tag.Name}' du document");
+                
+                var success = await _apiService.RemoveDocumentTagAsync(_document.Id, tagId);
+                if (success)
+                {
+                    _documentTags.RemoveAll(dt => dt.TagId == tagId);
+                    UpdateTagsDisplay();
+                    await LoggingService.LogInfoAsync($"✅ Tag '{tagToRemove.Tag.Name}' retiré du document");
+                }
+                else
+                {
+                    throw new Exception("Unable to remove tag from document");
+                }
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lors de la suppression du tag: {ex.Message}");
+                MessageBox.Show($"Error removing tag:\n{ex.Message}", 
+                               "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
+        #region Tag UI Event Handlers
+
+        private async void AddTagButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ProcessNewTag();
+        }
+
+        private async void NewTagTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                await ProcessNewTag();
+            }
+        }
+
+
+
+        private async void OpenTagEditorButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync("🏷️ Ouverture de l'éditeur de tags en mode sélection depuis DocumentDetailsWindow");
+                
+                // Ouvrir TagEditorWindow en mode sélection
+                var tagEditor = new TagEditorWindow(_apiService, async (selectedTags) =>
+                {
+                    await LoggingService.LogInfoAsync($"🏷️ {selectedTags.Count} tag(s) sélectionné(s) pour association");
+                    
+                    // Associer chaque tag sélectionné au document
+                    foreach (var tag in selectedTags)
+                    {
+                        // Vérifier si le tag n'est pas déjà associé
+                        if (!_documentTags.Any(dt => dt.TagId == tag.Id))
+                        {
+                            await AddTagToDocument(tag.Name);
+                        }
+                        else
+                        {
+                            await LoggingService.LogInfoAsync($"⚠️ Tag '{tag.Name}' déjà associé au document");
+                        }
+                    }
+                });
+                
+                tagEditor.Owner = Window.GetWindow(this);
+                tagEditor.ShowDialog();
+                
+                // Recharger les tags après fermeture de l'éditeur (au cas où des tags auraient été créés)
+                await LoadDocumentTagsAsync();
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur ouverture éditeur tags: {ex.Message}");
+                MessageBox.Show($"Error opening tag editor:\n{ex.Message}",
+                               "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task ProcessNewTag()
+        {
+            var tagName = NewTagTextBox.Text?.Trim();
+            if (string.IsNullOrEmpty(tagName) || tagName == NewTagTextBox.Tag?.ToString()) return;
+            
+            await AddTagToDocument(tagName);
+            
+            // Réinitialiser le champ avec le placeholder
+            NewTagTextBox.Text = NewTagTextBox.Tag?.ToString() ?? "Add a tag...";
+            NewTagTextBox.Foreground = new SolidColorBrush(Colors.Gray);
+        }
+
+        #endregion
     }
 } 

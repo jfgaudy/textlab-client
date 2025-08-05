@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 
 namespace TextLabClient.Models
@@ -59,5 +61,54 @@ namespace TextLabClient.Models
         
         [JsonProperty("unique_identifier")]
         public string UniqueIdentifier { get; set; } = string.Empty;
+        
+        // NOUVEAUX CHAMPS pour les tags
+        /// <summary>
+        /// Tags associés à ce document avec leurs métadonnées
+        /// </summary>
+        [JsonProperty("tags")]
+        public List<DocumentTag> Tags { get; set; } = new List<DocumentTag>();
+        
+        /// <summary>
+        /// Tags sous forme de liste simple (pour affichage rapide)
+        /// </summary>
+        [JsonIgnore]
+        public List<Tag> TagList => Tags.Select(dt => dt.Tag).Where(t => t != null).ToList()!;
+        
+        /// <summary>
+        /// Chaîne d'affichage des tags pour l'UI
+        /// </summary>
+        [JsonIgnore]
+        public string TagsDisplay => string.Join(", ", TagList.Select(t => t.DisplayName));
+        
+        /// <summary>
+        /// Tags groupés par type pour affichage organisé
+        /// </summary>
+        [JsonIgnore]
+        public Dictionary<string, List<Tag>> TagsByType => TagList.GroupBy(t => t.Type).ToDictionary(g => g.Key, g => g.ToList());
+        
+        /// <summary>
+        /// Retourne les tags d'un type spécifique
+        /// </summary>
+        public List<Tag> GetTagsByType(string tagType)
+        {
+            return TagList.Where(t => t.Type.Equals(tagType, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+        
+        /// <summary>
+        /// Vérifie si le document a un tag spécifique
+        /// </summary>
+        public bool HasTag(string tagId)
+        {
+            return Tags.Any(dt => dt.TagId == tagId);
+        }
+        
+        /// <summary>
+        /// Vérifie si le document a un tag d'un type donné
+        /// </summary>
+        public bool HasTagOfType(string tagType)
+        {
+            return TagList.Any(t => t.Type.Equals(tagType, StringComparison.OrdinalIgnoreCase));
+        }
     }
 } 

@@ -12,13 +12,18 @@ namespace TextLabClient.Services
     public class TextLabAdminService
     {
         private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
-        private readonly string _baseUrl;
+        private string _baseUrl;
         private readonly LLMCenterAuthService _authService;
 
         public TextLabAdminService(string baseUrl, LLMCenterAuthService authService)
         {
             _baseUrl = baseUrl.TrimEnd('/');
             _authService = authService;
+        }
+
+        public void SetBaseUrl(string baseUrl)
+        {
+            _baseUrl = baseUrl.TrimEnd('/');
         }
 
         /// <summary>

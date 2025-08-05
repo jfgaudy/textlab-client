@@ -410,4 +410,8 @@ secrets.json
 # TextLab Client specific
 *.user
 /logs/
-/temp/ 
+/temp/
+
+# Distribution files (should not be in git)
+TextLabClient_Distribution/
+*.zip 

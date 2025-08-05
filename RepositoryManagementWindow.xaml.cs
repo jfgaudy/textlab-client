@@ -20,14 +20,12 @@ namespace TextLabClient
         private List<Repository> _repositories = new();
         private Repository? _selectedRepository;
 
-        public RepositoryManagementWindow()
+        public RepositoryManagementWindow(TextLabAdminService adminService, TextLabApiService apiService)
         {
             InitializeComponent();
             
-            // Créer une instance temporaire du service d'auth pour cette fenêtre
-            var authService = new LLMCenterAuthService();
-            _adminService = new TextLabAdminService("https://textlab-api.onrender.com", authService);
-            _apiService = new TextLabApiService(authService);
+            _adminService = adminService;
+            _apiService = apiService;
             
             LoadRepositories();
         }

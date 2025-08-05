@@ -1,0 +1,319 @@
+<Window x:Class="TextLabClient.TagEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="🏷️ Gestionnaire de Tags Hiérarchiques" Height="800" Width="1200"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F5F5">
+
+    <DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top" Background="White" 
+                BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" 
+                Padding="20,15">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="🏷️" FontSize="24" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Gestionnaire de Tags" FontSize="20" FontWeight="Bold" 
+                              Foreground="#0066CC" VerticalAlignment="Center"/>
+                    <TextBlock Text="Organisation hiérarchique des documents" FontSize="14" 
+                              Foreground="Gray" Margin="15,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <!-- Bouton sélection - visible seulement en mode sélection -->
+                    <Button x:Name="AssociateSelectedButton" Content="✅ Associate Selected" Click="AssociateSelectedButton_Click" 
+                           Background="#28A745" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,10,0"
+                           Visibility="Collapsed"/>
+                    <Button Content="📊 Statistiques" Click="StatsButton_Click" 
+                           Background="#6C757D" Foreground="White" BorderThickness="0" Padding="10,5"/>
+                    <Button Content="💾 Sauvegarder" Click="SaveButton_Click" 
+                           Background="#28A745" Foreground="White" BorderThickness="0" Padding="10,5"/>
+                    <Button Content="❌ Fermer" Click="CloseButton_Click" 
+                           Background="#6C757D" Foreground="White" BorderThickness="0" Padding="10,5"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="#F8F9FA" BorderBrush="#DDDDDD" 
+               BorderThickness="0,0,0,1" Padding="15,10">
+            <WrapPanel Orientation="Horizontal">
+                <!-- Création -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+                    <Button x:Name="CreateTagButton" Content="➕ Nouveau Tag" 
+                           Click="CreateTagButton_Click" 
+                           Background="#28A745" Foreground="White" BorderThickness="0" Padding="10,5" Height="32"/>
+                    <ComboBox x:Name="TagTypeComboBox" Width="120" Height="32" Margin="10,0,0,0"
+                             SelectedValuePath="Tag" SelectedValue="custom">
+                        <ComboBoxItem Tag="client">👔 Client</ComboBoxItem>
+                        <ComboBoxItem Tag="technology">⚙️ Technologie</ComboBoxItem>
+                        <ComboBoxItem Tag="status">📊 Statut</ComboBoxItem>
+                        <ComboBoxItem Tag="category">📂 Catégorie</ComboBoxItem>
+                        <ComboBoxItem Tag="priority">⭐ Priorité</ComboBoxItem>
+                        <ComboBoxItem Tag="custom" IsSelected="True">🏷️ Personnalisé</ComboBoxItem>
+                    </ComboBox>
+                </StackPanel>
+                
+                <!-- Actions -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+                    <Button x:Name="EditTagButton" Content="✏️ Modifier" 
+                           Click="EditTagButton_Click" IsEnabled="False"
+                           Height="32" Padding="10,4" Margin="0,0,5,0"/>
+                    <Button x:Name="DeleteTagButton" Content="🗑️ Supprimer" 
+                           Click="DeleteTagButton_Click" IsEnabled="False"
+                           Background="#DC3545" Foreground="White" BorderThickness="0" Padding="10,5" Height="32" Margin="0,0,5,0"/>
+                    <Button x:Name="CreateChildButton" Content="👶 Enfant" 
+                           Click="CreateChildButton_Click" IsEnabled="False"
+                           Height="32" Padding="10,4"/>
+                </StackPanel>
+                
+                <!-- Filtres -->
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🔍 Filtre:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBox x:Name="SearchTextBox" Width="200" Height="30" 
+                            TextChanged="SearchTextBox_TextChanged" 
+                            VerticalContentAlignment="Center"
+                            Tag="Rechercher tags..."/>
+                    <Button x:Name="ClearSearchButton" Content="❌" Width="30" Height="30" 
+                           Click="ClearSearchButton_Click" Margin="5,0,0,0"/>
+                </StackPanel>
+            </WrapPanel>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Left Panel - Tag Hierarchy Tree -->
+            <Border Grid.Column="0" Background="White" BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="4" Padding="15" Margin="0,0,5,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Header -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
+                        <TextBlock Text="🌳 Hiérarchie des Tags" FontSize="16" FontWeight="Bold" 
+                                  Foreground="#0066CC" VerticalAlignment="Center"/>
+                        <Button Name="RefreshHierarchyButton" Content="🔄" 
+                               Background="#6C757D" Foreground="White" BorderThickness="0" 
+                               Click="RefreshHierarchyButton_Click" 
+                               Width="35" Height="35" Margin="10,0,0,0" Padding="0"/>
+                        <Button Name="ExpandAllButton" Content="📂" 
+                               Background="#6C757D" Foreground="White" BorderThickness="0" 
+                               Click="ExpandAllButton_Click" 
+                               Width="35" Height="35" Margin="5,0,0,0" Padding="0"
+                               ToolTip="Développer tout"/>
+                        <Button Name="CollapseAllButton" Content="📁" 
+                               Background="#6C757D" Foreground="White" BorderThickness="0" 
+                               Click="CollapseAllButton_Click" 
+                               Width="35" Height="35" Margin="5,0,0,0" Padding="0"
+                               ToolTip="Réduire tout"/>
+                    </StackPanel>
+                    
+                    <!-- Tag Tree -->
+                    <TreeView Grid.Row="1" Name="TagsTreeView" 
+                             SelectedItemChanged="TagsTreeView_SelectedItemChanged"
+                             MouseDoubleClick="TagsTreeView_MouseDoubleClick"
+                             Background="Transparent" BorderThickness="0">
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <Border x:Name="ItemBorder" Background="White" BorderBrush="#DDDDDD" 
+                                       BorderThickness="1" CornerRadius="3" Padding="8,4" Margin="0,1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- Type icon and color -->
+                                        <Ellipse Width="12" Height="12" Margin="0,0,5,0"
+                                                Fill="{Binding Tag.DisplayColor}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding DisplayIcon}" Margin="0,0,5,0" FontSize="14"/>
+                                        
+                                        <!-- Tag name and info -->
+                                        <TextBlock x:Name="NameText" Text="{Binding Tag.DisplayName}" FontWeight="SemiBold" Foreground="Black"/>
+                                        
+                                        <!-- Document count -->
+                                        <TextBlock Text="{Binding DisplayName}" Foreground="Gray" 
+                                                  Margin="10,0,0,0" FontSize="11"/>
+                                        
+                                        <!-- Type badge -->
+                                        <Border Background="{Binding Tag.DisplayColor}" CornerRadius="8" 
+                                               Padding="4,1" Margin="10,0,0,0">
+                                            <TextBlock Text="{Binding Tag.Type}" FontSize="9" Foreground="White" FontWeight="Bold"/>
+                                        </Border>
+                                        
+                                        <!-- Status indicators -->
+                                        <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                                            <TextBlock Text="🔒" Visibility="Collapsed" 
+                                                      ToolTip="Tag système" FontSize="10"/>
+                                            <TextBlock Text="👥" Visibility="Collapsed" 
+                                                      ToolTip="Tag public" FontSize="10" Margin="3,0,0,0"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <HierarchicalDataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
+                                        <Setter TargetName="ItemBorder" Property="Background" Value="#0066CC"/>
+                                        <Setter TargetName="NameText" Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsMouseOver}" Value="True">
+                                        <Setter TargetName="ItemBorder" Property="Background" Value="#E3F2FD"/>
+                                    </DataTrigger>
+                                </HierarchicalDataTemplate.Triggers>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                    
+                    <!-- Summary -->
+                    <StackPanel Grid.Row="2" Margin="0,15,0,0">
+                        <TextBlock Name="TagsSummaryText" Text="Chargement..." 
+                                  FontSize="12" Foreground="Gray" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            
+            <!-- Right Panel - Tag Details and Editor -->
+            <Border Grid.Column="1" Background="White" BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="4" Padding="15" Margin="5,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Name="TagDetailsPanel" Margin="0,0,0,20">
+                        <!-- Header -->
+                        <TextBlock Text="📝 Détails du Tag" FontSize="16" FontWeight="Bold" 
+                                  Foreground="#0066CC" Margin="0,0,0,20"/>
+                        
+                        <!-- Tag ID (hidden when creating) -->
+                        <StackPanel Name="TagIdPanel" Margin="0,0,0,15">
+                            <TextBlock Text="🔑 ID" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <TextBox Name="TagIdTextBox" IsReadOnly="True" Background="#F8F9FA"/>
+                        </StackPanel>
+                        
+                        <!-- Tag Name -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="📝 Nom *" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <TextBox Name="TagNameTextBox" TextChanged="TagNameTextBox_TextChanged"/>
+                        </StackPanel>
+                        
+                        <!-- Tag Slug -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="🔗 Slug" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <TextBox Name="TagSlugTextBox"/>
+                            <TextBlock Text="Généré automatiquement si vide" FontSize="10" Foreground="Gray" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        
+                        <!-- Tag Type -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="🏷️ Type *" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <ComboBox Name="DetailTagTypeComboBox" SelectedValuePath="Tag" SelectionChanged="DetailTagTypeComboBox_SelectionChanged">
+                                <ComboBoxItem Tag="client">👔 Client</ComboBoxItem>
+                                <ComboBoxItem Tag="technology">⚙️ Technologie</ComboBoxItem>
+                                <ComboBoxItem Tag="status">📊 Statut</ComboBoxItem>
+                                <ComboBoxItem Tag="category">📂 Catégorie</ComboBoxItem>
+                                <ComboBoxItem Tag="priority">⭐ Priorité</ComboBoxItem>
+                                <ComboBoxItem Tag="custom">🏷️ Personnalisé</ComboBoxItem>
+                            </ComboBox>
+                        </StackPanel>
+                        
+                        <!-- Parent Tag -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="👨‍👩‍👧‍👦 Tag Parent" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <ComboBox Name="ParentTagComboBox" DisplayMemberPath="FullPath" SelectedValuePath="Tag.Id"/>
+                            <TextBlock Text="Laisser vide pour un tag racine" FontSize="10" Foreground="Gray" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        
+                        <!-- Color -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="🎨 Couleur" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Name="ColorTextBox" Grid.Column="0" TextChanged="ColorTextBox_TextChanged" 
+                                        Text="#6C757D" Margin="0,0,5,0"/>
+                                <Rectangle Name="ColorPreview" Grid.Column="1" Width="30" Height="25" 
+                                          Fill="#6C757D" Stroke="Gray" StrokeThickness="1"/>
+                            </Grid>
+                            <WrapPanel Margin="0,5,0,0">
+                                <Button Content="🔴" Background="#DC3545" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#DC3545"/>
+                                <Button Content="🟠" Background="#FD7E14" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#FD7E14"/>
+                                <Button Content="🟡" Background="#FFC107" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#FFC107"/>
+                                <Button Content="🟢" Background="#198754" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#198754"/>
+                                <Button Content="🔵" Background="#0D6EFD" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#0D6EFD"/>
+                                <Button Content="🟣" Background="#6F42C1" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#6F42C1"/>
+                                <Button Content="🖤" Background="#212529" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#212529"/>
+                                <Button Content="🤍" Background="#6C757D" Width="25" Height="25" Margin="0,0,2,0" Click="PresetColor_Click" Tag="#6C757D"/>
+                            </WrapPanel>
+                        </StackPanel>
+                        
+                        <!-- Icon -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="🎭 Icône" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <TextBox Name="IconTextBox" TextChanged="IconTextBox_TextChanged"/>
+                            <TextBlock Name="IconPreview" Text="🏷️" FontSize="20" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                            <WrapPanel Margin="0,5,0,0">
+                                <Button Content="🏢" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="⚙️" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="📊" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="📂" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="⭐" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="🏷️" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="🔧" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="📝" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="🎯" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="💼" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="🌟" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                                <Button Content="🔔" Width="30" Height="30" Margin="0,0,2,2" Click="PresetIcon_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
+                        
+                        <!-- Description -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="📄 Description" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <TextBox Name="DescriptionTextBox" Height="60" TextWrapping="Wrap" 
+                                    AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                        </StackPanel>
+                        
+                        <!-- Flags -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="⚙️ Options" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <CheckBox Name="IsPublicCheckBox" Content="👥 Tag public" Margin="0,0,0,5"/>
+                            <CheckBox Name="IsSystemCheckBox" Content="🔒 Tag système" Margin="0,0,0,5"/>
+                            <CheckBox Name="IsActiveCheckBox" Content="✅ Tag actif" IsChecked="True"/>
+                        </StackPanel>
+                        
+                        <!-- Actions -->
+                        <StackPanel Margin="0,20,0,0">
+                            <Button Name="SaveTagButton" Content="💾 Sauvegarder" 
+                                   Click="SaveTagButton_Click" 
+                                   Background="#28A745" Foreground="White" BorderThickness="0" Padding="10,5" Height="35" Margin="0,0,0,10"/>
+                            <Button Name="CancelEditButton" Content="❌ Annuler" 
+                                   Click="CancelEditButton_Click" 
+                                   Height="35"/>
+                        </StackPanel>
+                        
+                        <!-- Document Count Info -->
+                        <StackPanel Name="DocumentInfoPanel" Margin="0,20,0,0" Background="#F8F9FA" 
+                                   Visibility="Collapsed">
+                            <Border BorderBrush="#DDDDDD" BorderThickness="1" 
+                                   CornerRadius="4" Padding="10">
+                                <StackPanel>
+                                    <TextBlock Text="📊 Utilisation" FontWeight="Bold" Margin="0,0,0,10"/>
+                                    <TextBlock Name="DocumentCountText" Text="0 documents associés" Margin="0,0,0,5"/>
+                                    <Button Name="ViewDocumentsButton" Content="📄 Voir les documents" 
+                                           Click="ViewDocumentsButton_Click" Height="30" Margin="0,5,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

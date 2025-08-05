@@ -1167,6 +1167,501 @@ namespace TextLabClient.Services
             }
         }
 
+        #region API Tags - Gestion des tags hiérarchiques
+
+        /// <summary>
+        /// Récupère tous les tags avec filtrage optionnel
+        /// </summary>
+        public async Task<List<Tag>?> GetTagsAsync(string[]? types = null, string? search = null, string? parentId = null, bool? isActive = null, int limit = 100, int offset = 0)
+        {
+            try
+            {
+                var queryParams = new List<string>();
+                
+                if (types != null && types.Length > 0)
+                {
+                    foreach (var type in types)
+                    {
+                        queryParams.Add($"types[]={Uri.EscapeDataString(type)}");
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(search))
+                    queryParams.Add($"search={Uri.EscapeDataString(search)}");
+                
+                if (!string.IsNullOrEmpty(parentId))
+                    queryParams.Add($"parent_id={Uri.EscapeDataString(parentId)}");
+                
+                if (isActive.HasValue)
+                    queryParams.Add($"is_active={isActive.Value.ToString().ToLower()}");
+                
+                queryParams.Add($"limit={limit}");
+                queryParams.Add($"offset={offset}");
+                
+                var queryString = queryParams.Count > 0 ? "?" + string.Join("&", queryParams) : "";
+                var endpoint = $"/api/v1/tags{queryString}";
+                
+                await LoggingService.LogInfoAsync($"🏷️ Récupération des tags: {endpoint}");
+                return await GetAuthenticatedAsync<List<Tag>>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetTagsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Récupère un tag spécifique par ID
+        /// </summary>
+        public async Task<Tag?> GetTagAsync(string tagId)
+        {
+            try
+            {
+                var endpoint = $"/api/v1/tags/{Uri.EscapeDataString(tagId)}";
+                await LoggingService.LogInfoAsync($"🏷️ Récupération tag: {tagId}");
+                return await GetAuthenticatedAsync<Tag>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetTagAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Crée un nouveau tag
+        /// </summary>
+        public async Task<Tag?> CreateTagAsync(Tag tag)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, "/api/v1/tags");
+                var json = JsonConvert.SerializeObject(tag);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"✅ Tag créé: {tag.Name}");
+                    return JsonConvert.DeserializeObject<Tag>(content);
+                }
+                
+                var errorContent = await response.Content.ReadAsStringAsync();
+                await LoggingService.LogErrorAsync($"❌ Erreur création tag: {response.StatusCode} - {errorContent}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur CreateTagAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Met à jour un tag existant
+        /// </summary>
+        public async Task<Tag?> UpdateTagAsync(string tagId, Tag tag)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Put, $"/api/v1/tags/{Uri.EscapeDataString(tagId)}");
+                var json = JsonConvert.SerializeObject(tag);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"✅ Tag mis à jour: {tag.Name}");
+                    return JsonConvert.DeserializeObject<Tag>(content);
+                }
+                
+                await LoggingService.LogErrorAsync($"❌ Erreur mise à jour tag: {response.StatusCode}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur UpdateTagAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Supprime un tag
+        /// </summary>
+        public async Task<bool> DeleteTagAsync(string tagId)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Delete, $"/api/v1/tags/{Uri.EscapeDataString(tagId)}");
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    await LoggingService.LogInfoAsync($"✅ Tag supprimé: {tagId}");
+                    return true;
+                }
+                
+                await LoggingService.LogErrorAsync($"❌ Erreur suppression tag: {response.StatusCode}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur DeleteTagAsync: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Récupère la hiérarchie complète des tags
+        /// </summary>
+        public async Task<object?> GetTagHierarchyAsync()
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync("🌳 Récupération hiérarchie des tags");
+                return await GetAuthenticatedAsync<object>("/api/v1/tags/hierarchy");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetTagHierarchyAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Récupère les tags par type
+        /// </summary>
+        public async Task<List<Tag>?> GetTagsByTypeAsync(string tagType)
+        {
+            try
+            {
+                var endpoint = $"/api/v1/tags/by-type/{Uri.EscapeDataString(tagType)}";
+                await LoggingService.LogInfoAsync($"🏷️ Récupération tags par type: {tagType}");
+                return await GetAuthenticatedAsync<List<Tag>>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetTagsByTypeAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Recherche rapide de tags
+        /// </summary>
+        public async Task<List<Tag>?> SearchTagsAsync(string query, int limit = 20)
+        {
+            try
+            {
+                var endpoint = $"/api/v1/tags/search?q={Uri.EscapeDataString(query)}&limit={limit}";
+                await LoggingService.LogInfoAsync($"🔍 Recherche tags: {query}");
+                return await GetAuthenticatedAsync<List<Tag>>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur SearchTagsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
+        #region API Tags - Associations Document-Tag
+
+        /// <summary>
+        /// Récupère tous les tags d'un document
+        /// </summary>
+        public async Task<List<DocumentTag>?> GetDocumentTagsAsync(string documentId)
+        {
+            try
+            {
+                var endpoint = $"/api/v1/documents/{Uri.EscapeDataString(documentId)}/tags";
+                await LoggingService.LogInfoAsync($"🏷️ Récupération tags du document: {documentId}");
+                return await GetAuthenticatedAsync<List<DocumentTag>>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetDocumentTagsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Ajoute des tags à un document
+        /// </summary>
+        public async Task<List<DocumentTag>?> AddDocumentTagsAsync(string documentId, List<DocumentTag> documentTags)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, $"/api/v1/documents/{Uri.EscapeDataString(documentId)}/tags");
+                
+                // 🔧 FORMAT MINIMAL : seulement tag_id pour éviter les erreurs avec les champs null
+                var correctPayload = documentTags.Select(dt => new { 
+                    tag_id = dt.TagId
+                }).ToList();
+                var json = JsonConvert.SerializeObject(correctPayload);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                await LoggingService.LogInfoAsync($"📤 JSON envoyé: {json}");
+                await LoggingService.LogInfoAsync($"🌐 URL: /api/v1/documents/{documentId}/tags");
+
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                // L'API retourne Status 201 Created pour les associations réussies selon l'équipe serveur
+                await LoggingService.LogInfoAsync($"📊 Status Code reçu: {response.StatusCode}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"📥 Contenu réponse brut: '{content}'");
+                    await LoggingService.LogInfoAsync($"📏 Longueur contenu: {content?.Length ?? 0}");
+                    await LoggingService.LogInfoAsync($"🔍 Content IsNullOrEmpty: {string.IsNullOrEmpty(content)}");
+                    
+                    // Vérifier si le contenu est vide
+                    if (string.IsNullOrEmpty(content))
+                    {
+                        await LoggingService.LogWarningAsync("⚠️ L'API a retourné un contenu vide - association probablement réussie mais pas de retour JSON");
+                        // Si l'API retourne vide mais StatusCode 200, l'association a probablement réussi
+                        // On retourne un DocumentTag factice pour indiquer le succès
+                        return new List<DocumentTag> 
+                        { 
+                            new DocumentTag 
+                            { 
+                                TagId = documentTags.First().TagId,
+                                DocumentId = documentId,
+                                Weight = documentTags.First().Weight,
+                                Confidence = documentTags.First().Confidence,
+                                Source = documentTags.First().Source,
+                                CreatedAt = DateTime.UtcNow
+                            }
+                        };
+                    }
+                    
+                    await LoggingService.LogInfoAsync($"✅ Tags ajoutés au document: {documentId}");
+                    return JsonConvert.DeserializeObject<List<DocumentTag>>(content);
+                }
+                
+                var errorContent = await response.Content.ReadAsStringAsync();
+                await LoggingService.LogErrorAsync($"❌ Erreur ajout tags document: {response.StatusCode} - {errorContent}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur AddDocumentTagsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Remplace tous les tags d'un document
+        /// </summary>
+        public async Task<List<DocumentTag>?> ReplaceDocumentTagsAsync(string documentId, List<DocumentTag> documentTags)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Put, $"/api/v1/documents/{Uri.EscapeDataString(documentId)}/tags");
+                var json = JsonConvert.SerializeObject(documentTags);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"✅ Tags remplacés pour le document: {documentId}");
+                    return JsonConvert.DeserializeObject<List<DocumentTag>>(content);
+                }
+                
+                await LoggingService.LogErrorAsync($"❌ Erreur remplacement tags document: {response.StatusCode}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur ReplaceDocumentTagsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Retire un tag d'un document
+        /// </summary>
+        public async Task<bool> RemoveDocumentTagAsync(string documentId, string tagId)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Delete, $"/api/v1/documents/{Uri.EscapeDataString(documentId)}/tags/{Uri.EscapeDataString(tagId)}");
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    await LoggingService.LogInfoAsync($"✅ Tag retiré du document: {documentId}");
+                    return true;
+                }
+                
+                await LoggingService.LogErrorAsync($"❌ Erreur retrait tag document: {response.StatusCode}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur RemoveDocumentTagAsync: {ex.Message}");
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region API Tags - Recherche avancée et vues
+
+        /// <summary>
+        /// Recherche de documents par combinaison de tags
+        /// </summary>
+        public async Task<TagSearchResponse?> FindDocumentsByTagsAsync(TagSearchRequest searchRequest)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, "/api/v1/documents/by-tags");
+                var json = JsonConvert.SerializeObject(searchRequest);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"✅ Recherche par tags effectuée");
+                    return JsonConvert.DeserializeObject<TagSearchResponse>(content);
+                }
+                
+                await LoggingService.LogErrorAsync($"❌ Erreur recherche par tags: {response.StatusCode}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur FindDocumentsByTagsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Vue par client avec breakdown par statut
+        /// </summary>
+        public async Task<object?> GetViewByClientAsync(string? client = null)
+        {
+            try
+            {
+                var endpoint = "/api/v1/views/by-client";
+                if (!string.IsNullOrEmpty(client))
+                {
+                    endpoint += $"?client={Uri.EscapeDataString(client)}";
+                }
+                
+                await LoggingService.LogInfoAsync($"👔 Vue par client: {client ?? "tous"}");
+                return await GetAuthenticatedAsync<object>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetViewByClientAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Vue par technologie
+        /// </summary>
+        public async Task<object?> GetViewByTechnologyAsync(string? technology = null)
+        {
+            try
+            {
+                var endpoint = "/api/v1/views/by-technology";
+                if (!string.IsNullOrEmpty(technology))
+                {
+                    endpoint += $"?technology={Uri.EscapeDataString(technology)}";
+                }
+                
+                await LoggingService.LogInfoAsync($"⚙️ Vue par technologie: {technology ?? "toutes"}");
+                return await GetAuthenticatedAsync<object>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetViewByTechnologyAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Vue par statut
+        /// </summary>
+        public async Task<object?> GetViewByStatusAsync(string? status = null)
+        {
+            try
+            {
+                var endpoint = "/api/v1/views/by-status";
+                if (!string.IsNullOrEmpty(status))
+                {
+                    endpoint += $"?status={Uri.EscapeDataString(status)}";
+                }
+                
+                await LoggingService.LogInfoAsync($"📊 Vue par statut: {status ?? "tous"}");
+                return await GetAuthenticatedAsync<object>(endpoint);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetViewByStatusAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Obtient les statistiques du système de tags
+        /// </summary>
+        public async Task<TagSystemStats?> GetTagSystemStatsAsync()
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync("📊 Récupération statistiques tags");
+                return await GetAuthenticatedAsync<TagSystemStats>("/api/v1/tags/stats/system");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur GetTagSystemStatsAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Suggestions de tags pour un document
+        /// </summary>
+        public async Task<TagSuggestionsResponse?> SuggestTagsForDocumentAsync(string documentId)
+        {
+            try
+            {
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Post, $"/api/v1/documents/{Uri.EscapeDataString(documentId)}/suggest-tags");
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"💡 Suggestions générées pour document: {documentId}");
+                    return JsonConvert.DeserializeObject<TagSuggestionsResponse>(content);
+                }
+                
+                await LoggingService.LogErrorAsync($"❌ Erreur suggestions tags: {response.StatusCode}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur SuggestTagsForDocumentAsync: {ex.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
         public void Dispose()
         {
             // HttpClient statique, pas de dispose nécessaire

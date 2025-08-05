@@ -24,6 +24,9 @@ namespace TextLabClient
         private ObservableCollection<Repository> _repositories = new ObservableCollection<Repository>();
         private Repository? _selectedRepository;
         private readonly string _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "textlab_debug.log");
+        
+        // 🚀 OPTIMISATION: Cache des versions pour éviter les rechargements
+        private readonly Dictionary<string, DocumentVersions> _versionsCache = new();
 
         public MainWindow()
         {
@@ -31,13 +34,13 @@ namespace TextLabClient
             
             // Initialiser les services avec dépendance
             _apiService = new TextLabApiService(_authService);
-            _adminService = new TextLabAdminService("https://textlab-api.onrender.com", _authService);
+            _adminService = new TextLabAdminService("", _authService); // URL sera définie dynamiquement
             
             // Initialisation
             LogDebug("Application démarrée - Initialisation");
             LogDebug($"Fichier de log: {_logFilePath}");
             LoadSettings();
-            SetStatus("Application démarrée");
+            SetStatus("Application started");
             RepositoriesListBox.ItemsSource = _repositories;
             
             // Test de référence des boutons
@@ -56,7 +59,7 @@ namespace TextLabClient
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             // L'utilisateur doit explicitement cliquer "Connecter"
-            SetStatus("Application démarrée - Cliquez 'Connecter' pour vous authentifier et accéder aux repositories");
+            SetStatus("Application started - Click 'Connect' to authenticate and access repositories");
             await LoggingService.LogInfoAsync("🚀 Application démarrée - En attente de connexion manuelle");
         }
 
@@ -79,7 +82,7 @@ namespace TextLabClient
                     var userInfo = await _authService.GetCurrentUserAsync();
                     if (userInfo != null)
                     {
-                        SetStatus($"Connecté en tant que {userInfo.Username} - Testez la connexion API");
+                        SetStatus($"Connected as {userInfo.Username} - Test API connection");
                         await LoggingService.LogInfoAsync($"👤 Utilisateur connecté: {userInfo.Username}");
                         
                         // ❌ SUPPRIMÉ: Ne plus charger les repositories ici pour éviter le double chargement
@@ -89,7 +92,7 @@ namespace TextLabClient
                 else
                 {
                     await LoggingService.LogWarningAsync("❌ Connexion annulée par l'utilisateur");
-                    SetStatus("Connexion annulée - Fonctionnalités limitées");
+                    SetStatus("Connection cancelled - Limited features");
                     
                     // Possibilité de fermer l'application ou continuer en mode limité
                     var response = MessageBox.Show(
@@ -243,16 +246,14 @@ namespace TextLabClient
                     
                     try
                     {
-                        // D'abord vérifier le nombre de versions
-                        LogDebug($"🔢 Vérification du nombre de versions pour: {document.Title}");
-                        var versionsCount = await _apiService.GetDocumentVersionsCountAsync(document.Id);
+                        // 🚀 OPTIMISATION: Charger directement les versions (un seul appel API)
+                        LogDebug($"🔢 Chargement optimisé des versions pour: {document.Title}");
+                        var versionsResult = await LoadDocumentVersionsForTree(docItem, document);
+                        var versionsCount = versionsResult?.TotalVersions ?? 0;
                         LogDebug($"📊 {document.Title} a {versionsCount} version(s)");
                         
                         if (versionsCount > 1)
                         {
-                            // Charger les détails des versions pour obtenir la date de la version actuelle
-                            await LoadDocumentVersionsForTree(docItem, document);
-                            
                             // Récupérer la date de la version actuelle
                             var currentVersionDate = GetCurrentVersionDate(docItem);
                             if (currentVersionDate.HasValue)
@@ -439,11 +440,12 @@ namespace TextLabClient
                 }
                 
                 var userInfo = await _authService.GetCurrentUserAsync();
-                await LoggingService.LogInfoAsync($"👤 Utilisateur connecté: {userInfo?.Username ?? "Inconnu"}");
+                await LoggingService.LogInfoAsync($"👤 User connected: {userInfo?.Username ?? "Unknown"}");
                 
                 // 2. CONFIGURATION DE L'URL API
-                await LoggingService.LogInfoAsync($"🌐 Configuration API vers: {ApiUrlTextBox.Text}");
+                await LoggingService.LogInfoAsync($"🌐 API Configuration to: {ApiUrlTextBox.Text}");
                 _apiService.SetBaseUrl(ApiUrlTextBox.Text);
+                _adminService.SetBaseUrl(ApiUrlTextBox.Text);
                 
                 // 3. TEST DE CONNEXION API
                 var healthInfo = await _apiService.TestConnectionAsync();
@@ -472,7 +474,7 @@ namespace TextLabClient
                 {
                     SetConnectionStatus("❌ Échec");
                     ApiVersionText.Text = "";
-                    SetStatus("Échec de la connexion API");
+                    SetStatus("API connection failed");
                     _repositories.Clear();
                     await LoggingService.LogErrorAsync("❌ Échec de connexion à l'API TextLab");
                     
@@ -601,8 +603,8 @@ namespace TextLabClient
                     SetStatus($"Repository ajouté: {repo.DisplayName} (Type: {repo.TypeDisplay})");
                 }
                 
-                SetStatus($"✅ {repositories.Count} repository(s) chargé(s) avec succès - Ctrl+N pour nouveau document");
-                RepositoryInfoText.Text = $"{repositories.Count} repository(s) disponible(s)";
+                SetStatus($"✅ {repositories.Count} repository(s) loaded successfully - Ctrl+N for new document");
+                RepositoryInfoText.Text = $"{repositories.Count} repository(s) available";
             }
             catch (Exception ex)
             {
@@ -677,8 +679,40 @@ namespace TextLabClient
                     );
                     repoNode.Tag = _selectedRepository;
                     
-                    // Grouper par catégorie
-                    var categories = documents.GroupBy(d => d.Category ?? "Sans catégorie");
+                    // Séparer les documents avec et sans catégorie
+                    var documentsWithCategory = documents.Where(d => !string.IsNullOrEmpty(d.Category)).ToList();
+                    var documentsWithoutCategory = documents.Where(d => string.IsNullOrEmpty(d.Category)).ToList();
+                    
+                    // D'abord, ajouter les documents sans catégorie directement sous le repository
+                    foreach (var doc in documentsWithoutCategory.OrderBy(d => d.Title))
+                    {
+                        LogDebug($"📄 Traitement document sans catégorie: {doc.Title} (ID: {doc.Id})");
+                        
+                        var docIcon = GetDocumentIcon(null); // Icône pour document sans catégorie
+                        var docInfo = $"Modifié: {doc.UpdatedAt:dd/MM/yyyy}";
+                        
+                        var docNode = new DocumentTreeItem(
+                            doc.Title ?? "Sans titre", 
+                            docIcon, 
+                            docInfo,
+                            "document"
+                        );
+                        docNode.Tag = doc;
+                        
+                        // Chargement vraiment paresseux : ajouter un placeholder pour tous les documents
+                        var placeholderNode = new DocumentTreeItem(
+                            "Cliquer pour voir les versions...", 
+                            "🔍", 
+                            "",
+                            "lazy-placeholder"
+                        );
+                        docNode.Children.Add(placeholderNode);
+                        
+                        repoNode.Children.Add(docNode);
+                    }
+                    
+                    // Ensuite, grouper les documents avec catégorie
+                    var categories = documentsWithCategory.GroupBy(d => d.Category);
                     
                     foreach (var category in categories.OrderBy(c => c.Key))
                     {
@@ -745,7 +779,7 @@ namespace TextLabClient
                     RepositoryInfoText.Text = $"📁 {_selectedRepository.Name} • {documents.Count} document(s) • {_selectedRepository.Type}";
                     
                     // Status plus concis
-                    SetStatus($"✅ {documents.Count} document(s) chargé(s)");
+                    SetStatus($"✅ {documents.Count} document(s) loaded");
                 }
                 else
                 {
@@ -760,7 +794,7 @@ namespace TextLabClient
                     // Mettre à jour l'information du repository même s'il est vide
                     RepositoryInfoText.Text = $"📁 {_selectedRepository.Name} • Aucun document • {_selectedRepository.Type}";
                     
-                    SetStatus($"❌ Aucun document trouvé");
+                    SetStatus($"❌ No documents found");
                 }
             }
             catch (Exception ex)
@@ -776,13 +810,23 @@ namespace TextLabClient
             }
         }
 
-        private async System.Threading.Tasks.Task LoadDocumentVersionsForTree(DocumentTreeItem docNode, Document document)
+        private async System.Threading.Tasks.Task<DocumentVersions?> LoadDocumentVersionsForTree(DocumentTreeItem docNode, Document document)
         {
             try
             {
                 LogDebug($"=== Chargement versions pour: {document.Title} ===");
                 
-                // Chargement des versions via l'API Phase 6
+                // 🚀 OPTIMISATION: Vérifier le cache d'abord
+                if (_versionsCache.TryGetValue(document.Id, out var cachedVersions))
+                {
+                    LogDebug($"📦 Versions récupérées depuis le cache pour: {document.Title}");
+                    // Reconstruire l'arbre depuis le cache
+                    RebuildVersionTreeFromCache(docNode, cachedVersions);
+                    return cachedVersions;
+                }
+                
+                // Chargement des versions via l'API (uniquement si pas en cache)
+                LogDebug($"🌐 Chargement API versions pour: {document.Title}");
                 var versionsResult = await _apiService.GetDocumentVersionsAsync(document.Id);
                 
                 LogDebug($"Versions result: {versionsResult?.TotalVersions ?? 0} versions trouvées");
@@ -797,21 +841,15 @@ namespace TextLabClient
                 
                 if (versionsResult != null && versionsResult.Versions.Count > 0)
                 {
-                    // Ajouter directement les versions sous le document (sans dossier intermédiaire)
-                    foreach (var version in versionsResult.Versions.OrderByDescending(v => v.Date))
-                    {
-                        var versionItem = new DocumentTreeItem
-                        {
-                            Name = $"📄 {version.Version} - {version.CommitSha?.Substring(0, 7)} ({version.Date:dd/MM/yyyy HH:mm})",
-                            Info = $"Version: {version.Version}\nSHA: {version.CommitSha}\nAuteur: {version.Author}\nDate: {version.Date:dd/MM/yyyy HH:mm:ss}\nMessage: {version.Message}",
-                            Type = "version",
-                            Icon = "📄",
-                            Version = version,
-                            VersionSha = version.CommitSha
-                        };
-                        docNode.Children.Add(versionItem);
-                    }
+                    // 🚀 OPTIMISATION: Mettre en cache avant de construire l'arbre
+                    _versionsCache[document.Id] = versionsResult;
+                    
+                    // Construire l'arbre des versions
+                    RebuildVersionTreeFromCache(docNode, versionsResult);
                 }
+                
+                // 🚀 OPTIMISATION: Retourner le résultat pour éviter un second appel
+                return versionsResult;
             }
             catch (Exception ex)
             {
@@ -824,6 +862,33 @@ namespace TextLabClient
                     Info = $"Erreur: {ex.Message}\n\nLes endpoints /versions ne sont pas encore disponibles dans l'API de production."
                 };
                 docNode.Children.Add(errorItem);
+                
+                // 🚀 OPTIMISATION: Retourner null en cas d'erreur
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 🚀 OPTIMISATION: Reconstruit l'arbre des versions depuis le cache
+        /// </summary>
+        private void RebuildVersionTreeFromCache(DocumentTreeItem docNode, DocumentVersions versionsResult)
+        {
+            // Nettoyer les versions existantes
+            docNode.Children.Clear();
+            
+            // Ajouter les versions depuis le cache
+            foreach (var version in versionsResult.Versions.OrderByDescending(v => v.Date))
+            {
+                var versionItem = new DocumentTreeItem
+                {
+                    Name = $"📄 {version.Version} - {version.CommitSha?.Substring(0, 7)} ({version.Date:dd/MM/yyyy HH:mm})",
+                    Info = $"Version: {version.Version}\nSHA: {version.CommitSha}\nAuteur: {version.Author}\nDate: {version.Date:dd/MM/yyyy HH:mm:ss}\nMessage: {version.Message}",
+                    Type = "version",
+                    Icon = "📄",
+                    Version = version,
+                    VersionSha = version.CommitSha
+                };
+                docNode.Children.Add(versionItem);
             }
         }
 
@@ -979,6 +1044,8 @@ namespace TextLabClient
 
         private async void RefreshRepositoriesButton_Click(object sender, RoutedEventArgs e)
         {
+            // 🚀 OPTIMISATION: Vider le cache lors du refresh
+            _versionsCache.Clear();
             await LoadRepositories();
         }
 
@@ -993,7 +1060,7 @@ namespace TextLabClient
             else
             {
                 await LoadRepositories();
-                SetStatus("Repositories actualisés");
+                SetStatus("Repositories refreshed");
             }
         }
 
@@ -1149,7 +1216,7 @@ namespace TextLabClient
                             MessageBoxButton.OK, 
                             MessageBoxImage.Information);
                         
-                        SetStatus("Logs vidés avec succès - Backup créé");
+                        SetStatus("Logs cleared successfully - Backup created");
                     }
                     else
                     {
@@ -1200,7 +1267,7 @@ namespace TextLabClient
                 // Vérifier que nous avons une connexion
                 if (!_apiService.IsConnected)
                 {
-                    MessageBox.Show("❌ Aucune connexion à l'API. Testez la connexion d'abord.",
+                    MessageBox.Show("❌ No API connection. Test the connection first.",
                                    "Connexion requise", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
@@ -1284,7 +1351,7 @@ namespace TextLabClient
             try
             {
                 LogDebug("Ouverture de la fenêtre de gestion des repositories");
-                var repositoryWindow = new RepositoryManagementWindow
+                var repositoryWindow = new RepositoryManagementWindow(_adminService!, _apiService!)
                 {
                     Owner = this
                 };
@@ -1476,7 +1543,7 @@ namespace TextLabClient
                 }
                 else
                 {
-                    MessageBox.Show("Veuillez sélectionner un document à éditer.", "Aucun document sélectionné", 
+                    MessageBox.Show("Please select a document to edit.", "No document selected", 
                                   MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
@@ -1543,7 +1610,7 @@ namespace TextLabClient
                 }
                 else
                 {
-                    MessageBox.Show("Veuillez sélectionner un document à supprimer.", "Aucun document sélectionné", 
+                    MessageBox.Show("Please select a document to delete.", "No document selected", 
                                   MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
@@ -1608,7 +1675,7 @@ namespace TextLabClient
                 }
                 else
                 {
-                    MessageBox.Show("Veuillez sélectionner un repository à synchroniser.", "Aucun repository sélectionné", 
+                    MessageBox.Show("Please select a repository to sync.", "No repository selected", 
                                   MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
@@ -1752,6 +1819,78 @@ namespace TextLabClient
             {
                 await LoggingService.LogErrorAsync($"❌ Erreur affichage token: {ex.Message}");
                 MessageBox.Show($"Erreur lors de l'affichage du token:\n{ex.Message}", 
+                              "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Ouvre l'éditeur de tags hiérarchiques
+        /// </summary>
+        private async void TagEditorButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_apiService == null)
+                {
+                    MessageBox.Show("Vous devez d'abord vous connecter pour accéder aux tags.", 
+                                  "Connexion requise", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // Vérifier que l'utilisateur est authentifié
+                if (!_authService.IsAuthenticated())
+                {
+                    MessageBox.Show("Vous devez d'abord vous connecter pour accéder aux tags.\n\nCliquez sur 'Connect' pour vous authentifier.", 
+                                  "Authentification requise", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // Vérifier que l'API est connectée
+                if (!_apiService.IsConnected)
+                {
+                    MessageBox.Show("La connexion à l'API TextLab n'est pas établie.\n\nCliquez sur 'Connect' pour établir la connexion.", 
+                                  "Connexion API requise", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                await LoggingService.LogInfoAsync("🏷️ Ouverture de l'éditeur de tags");
+                
+                // Test rapide des endpoints tags avant d'ouvrir l'éditeur
+                try
+                {
+                    await LoggingService.LogInfoAsync("🧪 Test de l'endpoint tags...");
+                    var testTags = await _apiService.GetTagsAsync(limit: 1);
+                    await LoggingService.LogInfoAsync($"✅ Endpoint tags fonctionnel: {testTags?.Count ?? 0} tag(s) trouvé(s)");
+                }
+                catch (Exception testEx)
+                {
+                    await LoggingService.LogErrorAsync($"❌ Endpoint tags non disponible: {testEx.Message}");
+                    
+                    var result = MessageBox.Show(
+                        $"L'API des tags n'est pas encore disponible sur ce serveur TextLab.\n\n" +
+                        $"Erreur: {testEx.Message}\n\n" +
+                        "Voulez-vous quand même ouvrir l'éditeur de tags pour voir l'interface ?",
+                        "API Tags non disponible",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                        
+                    if (result == MessageBoxResult.No)
+                    {
+                        return;
+                    }
+                }
+                
+                var tagEditor = new TagEditorWindow(_apiService);
+                tagEditor.Owner = this;
+                tagEditor.ShowDialog();
+                
+                // Optionnel : rafraîchir les documents après modification des tags
+                // await RefreshCurrentView();
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur ouverture éditeur tags: {ex.Message}");
+                MessageBox.Show($"Erreur lors de l'ouverture de l'éditeur de tags:\n{ex.Message}", 
                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
