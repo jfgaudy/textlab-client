@@ -49,8 +49,7 @@ namespace TextLabClient
                 // Attacher les événements maintenant que les contrôles sont chargés
                 if (DocumentTitleTextBox != null)
                     DocumentTitleTextBox.TextChanged += UpdateFinalPath;
-                if (CategoryComboBox != null)
-                    CategoryComboBox.SelectionChanged += UpdateFinalPath;
+
                 if (FilePathTextBox != null)
                     FilePathTextBox.TextChanged += UpdateFinalPath;
                 if (TextInputRadio != null)
@@ -127,30 +126,6 @@ namespace TextLabClient
         private void GeneratePathButton_Click(object sender, RoutedEventArgs e)
         {
             var title = DocumentTitleTextBox.Text?.Trim();
-            // 🔧 CORRECTION: Gestion spéciale pour le premier item "(aucune - à la racine)"
-            string? category = null;
-            if (CategoryComboBox.SelectedItem is ComboBoxItem selectedItem)
-            {
-                // Si c'est le premier item (avec TextBlock), considérer comme null
-                if (selectedItem.Content is TextBlock)
-                {
-                    category = null;
-                }
-                // Sinon récupérer le contenu string
-                else if (selectedItem.Content is string categoryContent && !string.IsNullOrWhiteSpace(categoryContent))
-                {
-                    category = categoryContent;
-                }
-            }
-            else
-            {
-                // L'utilisateur a tapé quelque chose dans la ComboBox
-                category = CategoryComboBox.Text?.Trim();
-                if (string.IsNullOrWhiteSpace(category))
-                {
-                    category = null;
-                }
-            }
 
             if (!string.IsNullOrEmpty(title))
             {
@@ -169,16 +144,8 @@ namespace TextLabClient
                     .Replace("|", "")
                     .ToLower();
 
-                // 🔧 CORRECTION: Ne pas inclure "documents/" dans git_path (géré par repository config)
-                string generatedPath;
-                if (!string.IsNullOrEmpty(category))
-                {
-                    generatedPath = $"{category}/{fileName}.md";
-                }
-                else
-                {
-                    generatedPath = $"{fileName}.md";
-                }
+                // Générer le chemin sans catégorie
+                string generatedPath = $"{fileName}.md";
 
                 FilePathTextBox.Text = generatedPath;
             }
@@ -274,7 +241,7 @@ namespace TextLabClient
             {
                 // Vérifier que tous les contrôles sont initialisés
                 if (RepositoryComboBox == null || FilePathTextBox == null || 
-                    DocumentTitleTextBox == null || CategoryComboBox == null || FinalPathTextBlock == null)
+                    DocumentTitleTextBox == null || FinalPathTextBlock == null)
                 {
                     return; // Les contrôles ne sont pas encore prêts
                 }
@@ -286,30 +253,6 @@ namespace TextLabClient
                 if (string.IsNullOrEmpty(filePath))
                 {
                     var title = DocumentTitleTextBox.Text?.Trim();
-                    // 🔧 CORRECTION: Gestion spéciale pour le premier item "(aucune - à la racine)"
-                    string? category = null;
-                    if (CategoryComboBox.SelectedItem is ComboBoxItem selectedItem)
-                    {
-                        // Si c'est le premier item (avec TextBlock), considérer comme null
-                        if (selectedItem.Content is TextBlock)
-                        {
-                            category = null;
-                        }
-                        // Sinon récupérer le contenu string
-                        else if (selectedItem.Content is string categoryContent && !string.IsNullOrWhiteSpace(categoryContent))
-                        {
-                            category = categoryContent;
-                        }
-                    }
-                    else
-                    {
-                        // L'utilisateur a tapé quelque chose dans la ComboBox
-                        category = CategoryComboBox.Text?.Trim();
-                        if (string.IsNullOrWhiteSpace(category))
-                        {
-                            category = null;
-                        }
-                    }
 
                     if (!string.IsNullOrEmpty(title))
                     {
@@ -327,15 +270,7 @@ namespace TextLabClient
                             .Replace("|", "")
                             .ToLower();
 
-                        // 🔧 CORRECTION: Ne pas inclure "documents/" dans git_path (géré par repository config)
-                        if (!string.IsNullOrEmpty(category))
-                        {
-                            filePath = $"{category}/{fileName}.md";
-                        }
-                        else
-                        {
-                            filePath = $"{fileName}.md";
-                        }
+                        filePath = $"{fileName}.md";
                     }
                     else
                     {
@@ -409,30 +344,7 @@ namespace TextLabClient
                 CreateButton.IsEnabled = false;
                 CreateButton.Content = "⏳ Création...";
 
-                // 🔧 CORRECTION: Gestion spéciale pour le premier item "(aucune - à la racine)"
-                string? category = null;
-                if (CategoryComboBox.SelectedItem is ComboBoxItem selectedItem)
-                {
-                    // Si c'est le premier item (avec TextBlock), considérer comme null
-                    if (selectedItem.Content is TextBlock)
-                    {
-                        category = null;
-                    }
-                    // Sinon récupérer le contenu string
-                    else if (selectedItem.Content is string categoryContent && !string.IsNullOrWhiteSpace(categoryContent))
-                    {
-                        category = categoryContent;
-                    }
-                }
-                else
-                {
-                    // L'utilisateur a tapé quelque chose dans la ComboBox
-                    category = CategoryComboBox.Text?.Trim();
-                    if (string.IsNullOrWhiteSpace(category))
-                    {
-                        category = null;
-                    }
-                }
+
 
                 var filePath = FilePathTextBox.Text?.Trim();
                 if (string.IsNullOrEmpty(filePath))
@@ -452,15 +364,7 @@ namespace TextLabClient
                         .Replace("|", "")
                         .ToLower();
 
-                    // 🔧 CORRECTION: Ne pas inclure "documents/" dans git_path (géré par repository config)
-                    if (!string.IsNullOrEmpty(category))
-                    {
-                        filePath = $"{category}/{fileName}.md";
-                    }
-                    else
-                    {
-                        filePath = $"{fileName}.md";
-                    }
+                    filePath = $"{fileName}.md";
                 }
 
                 // Créer le document
@@ -469,7 +373,7 @@ namespace TextLabClient
                     title: title,
                     content: content,
                     repositoryId: _selectedRepositoryId,
-                    category: category,
+
                     visibility: "private",
                     createdBy: null
                 );

@@ -389,7 +389,7 @@ namespace TextLabClient.Services
 
         // SUPPRIMÉ: UpdateDocumentAsync - Endpoint non disponible dans l'API
 
-        public async Task<Document?> CreateDocumentAsync(string title, string content, string repositoryId, string? category = null, string? visibility = "private", string? createdBy = null)
+        public async Task<Document?> CreateDocumentAsync(string title, string content, string repositoryId, string? visibility = "private", string? createdBy = null)
         {
             try
             {
@@ -398,7 +398,7 @@ namespace TextLabClient.Services
                     title = title,
                     content = content,
                     repository_id = repositoryId,
-                    category = category,
+    
                     visibility = visibility ?? "private",
                     created_by = createdBy
                 };
@@ -453,7 +453,7 @@ namespace TextLabClient.Services
         /// <summary>
         /// Met à jour un document existant avec création automatique d'une nouvelle version Git
         /// </summary>
-        public async Task<Document?> UpdateDocumentAsync(string documentId, string author, string? title = null, string? content = null, string? category = null, string? visibility = null)
+        public async Task<Document?> UpdateDocumentAsync(string documentId, string author, string? title = null, string? content = null, string? visibility = null)
         {
             try
             {
@@ -464,8 +464,7 @@ namespace TextLabClient.Services
                     updateData["title"] = title;
                 if (!string.IsNullOrEmpty(content))
                     updateData["content"] = content;
-                if (!string.IsNullOrEmpty(category))
-                    updateData["category"] = category;
+
                 if (!string.IsNullOrEmpty(visibility))
                     updateData["visibility"] = visibility;
 
@@ -1548,9 +1547,112 @@ namespace TextLabClient.Services
         }
 
         /// <summary>
+        /// Récupère la hiérarchie des tags pour un repository spécifique avec PAGINATION (API OPTIMISÉE)
+        /// </summary>
+        public async Task<RepositoryTagHierarchy?> GetRepositoryTagHierarchyAsync(
+            string repositoryId, 
+            bool compact = true, 
+            int tagLimit = 50, 
+            int tagOffset = 0)
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync($"🚀 Appel API hiérarchie pour repository: {repositoryId} (compact={compact}, limit={tagLimit})");
+                
+                var endpoint = $"/api/v1/repositories/{repositoryId}/tags/hierarchy";
+                var queryParams = new List<string>();
+                
+                if (compact)
+                    queryParams.Add("mode=compact");
+                    
+                if (tagLimit != 50)
+                    queryParams.Add($"tag_limit={tagLimit}");
+                    
+                if (tagOffset > 0)
+                    queryParams.Add($"tag_offset={tagOffset}");
+                
+                if (queryParams.Any())
+                    endpoint += "?" + string.Join("&", queryParams);
+                
+                var response = await GetAuthenticatedAsync<RepositoryTagHierarchy>(endpoint);
+                
+                if (response != null)
+                {
+                    await LoggingService.LogInfoAsync($"✅ Hiérarchie reçue: {response.Hierarchy?.Count ?? 0} types de tags, {response.TotalDocuments} documents");
+                }
+                else
+                {
+                    await LoggingService.LogWarningAsync("⚠️ Réponse vide de l'API hiérarchie");
+                }
+                
+                return response;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur récupération hiérarchie repository {repositoryId}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 🌳 RÉVOLUTION : Récupère documents d'un tag spécifique dans un repository
+        /// </summary>
+        public async Task<List<Document>?> GetRepositoryTagDocumentsAsync(string repositoryId, string tagId, int limit = 20, int offset = 0)
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync($"🚀 Lazy loading RÉVOLUTIONNAIRE pour tag: {tagId} dans repo: {repositoryId} (limit={limit}, offset={offset})");
+                
+                // ✅ NOUVELLE API RÉVOLUTIONNAIRE !
+                var endpoint = $"/api/v1/repositories/{repositoryId}/tags/{tagId}/documents?limit={limit}&offset={offset}";
+                var response = await GetAuthenticatedAsync<TagDocumentsResponse>(endpoint);
+                
+                if (response?.Documents != null)
+                {
+                    await LoggingService.LogInfoAsync($"✅ {response.Documents.Count} documents récupérés pour tag {tagId} - Path: {response.Tag?.Path}");
+                    return response.Documents;
+                }
+                
+                return new List<Document>();
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur récupération documents révolutionnaire tag {tagId}: {ex.Message}");
+                return new List<Document>();
+            }
+        }
+
+        /// <summary>
+        /// 🚀 LAZY LOADING : Récupère les documents d'un tag spécifique (LEGACY API)
+        /// </summary>
+        public async Task<List<Document>?> GetTagDocumentsAsync(string tagId, int limit = 20, int offset = 0)
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync($"🚀 Lazy loading documents pour tag: {tagId} (limit={limit}, offset={offset})");
+                
+                // ✅ NOUVELLE API IMPLÉMENTÉE par l'équipe serveur !
+                var endpoint = $"/api/v1/repositories/{tagId}/documents?limit={limit}&offset={offset}";
+                var response = await GetAuthenticatedAsync<List<Document>>(endpoint);
+                
+                if (response != null)
+                {
+                    await LoggingService.LogInfoAsync($"✅ {response.Count} documents récupérés pour tag {tagId}");
+                }
+                
+                return response;
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur récupération documents tag {tagId}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Vue par client avec breakdown par statut
         /// </summary>
-        public async Task<object?> GetViewByClientAsync(string? client = null)
+        public async Task<ViewResponse?> GetViewByClientAsync(string? client = null)
         {
             try
             {
@@ -1561,7 +1663,27 @@ namespace TextLabClient.Services
                 }
                 
                 await LoggingService.LogInfoAsync($"👔 Vue par client: {client ?? "tous"}");
-                return await GetAuthenticatedAsync<object>(endpoint);
+                
+                var request = await CreateAuthenticatedRequestAsync(HttpMethod.Get, endpoint);
+                var response = await SendAuthenticatedRequestAsync(request);
+                
+                await LoggingService.LogInfoAsync($"📊 Réponse vue client: {response.StatusCode}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogInfoAsync($"📊 Contenu vue client: {content.Substring(0, Math.Min(200, content.Length))}...");
+                    
+                    var result = JsonConvert.DeserializeObject<ViewResponse>(content);
+                    await LoggingService.LogInfoAsync($"✅ Vue client désérialisée: {result?.Organization?.Count ?? 0} groupes, {result?.TotalDocuments ?? 0} documents");
+                    return result;
+                }
+                else
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    await LoggingService.LogErrorAsync($"❌ Erreur vue client {response.StatusCode}: {errorContent}");
+                    return null;
+                }
             }
             catch (Exception ex)
             {
@@ -1573,7 +1695,7 @@ namespace TextLabClient.Services
         /// <summary>
         /// Vue par technologie
         /// </summary>
-        public async Task<object?> GetViewByTechnologyAsync(string? technology = null)
+        public async Task<ViewResponse?> GetViewByTechnologyAsync(string? technology = null)
         {
             try
             {
@@ -1584,7 +1706,7 @@ namespace TextLabClient.Services
                 }
                 
                 await LoggingService.LogInfoAsync($"⚙️ Vue par technologie: {technology ?? "toutes"}");
-                return await GetAuthenticatedAsync<object>(endpoint);
+                return await GetAuthenticatedAsync<ViewResponse>(endpoint);
             }
             catch (Exception ex)
             {
@@ -1596,7 +1718,7 @@ namespace TextLabClient.Services
         /// <summary>
         /// Vue par statut
         /// </summary>
-        public async Task<object?> GetViewByStatusAsync(string? status = null)
+        public async Task<ViewResponse?> GetViewByStatusAsync(string? status = null)
         {
             try
             {
@@ -1607,7 +1729,7 @@ namespace TextLabClient.Services
                 }
                 
                 await LoggingService.LogInfoAsync($"📊 Vue par statut: {status ?? "tous"}");
-                return await GetAuthenticatedAsync<object>(endpoint);
+                return await GetAuthenticatedAsync<ViewResponse>(endpoint);
             }
             catch (Exception ex)
             {

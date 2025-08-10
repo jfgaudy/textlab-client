@@ -772,9 +772,9 @@ namespace TextLabClient
                 new Tag { Id = "demo-status-archived", Name = "Archivé", Type = "status", Color = "#6C757D", Icon = "📦", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now },
                 
                 // Tags hiérarchiques - Projets sous clients
-                new Tag { Id = "demo-proj-acme-alpha", Name = "Projet Alpha", Type = "category", ParentId = "demo-client-acme", Color = "#007BFF", Icon = "📁", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now },
-                new Tag { Id = "demo-proj-acme-beta", Name = "Projet Beta", Type = "category", ParentId = "demo-client-acme", Color = "#007BFF", Icon = "📁", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now },
-                new Tag { Id = "demo-proj-tech-mvp", Name = "MVP", Type = "category", ParentId = "demo-client-tech", Color = "#28A745", Icon = "🎯", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now }
+                new Tag { Id = "demo-proj-acme-alpha", Name = "Projet Alpha", Type = "custom", ParentId = "demo-client-acme", Color = "#007BFF", Icon = "📁", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now },
+                new Tag { Id = "demo-proj-acme-beta", Name = "Projet Beta", Type = "custom", ParentId = "demo-client-acme", Color = "#007BFF", Icon = "📁", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now },
+                new Tag { Id = "demo-proj-tech-mvp", Name = "MVP", Type = "custom", ParentId = "demo-client-tech", Color = "#28A745", Icon = "🎯", IsActive = true, IsPublic = true, CreatedAt = DateTime.Now }
             };
         }
 

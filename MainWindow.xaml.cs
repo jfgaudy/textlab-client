@@ -24,9 +24,14 @@ namespace TextLabClient
         private ObservableCollection<Repository> _repositories = new ObservableCollection<Repository>();
         private Repository? _selectedRepository;
         private readonly string _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "textlab_debug.log");
+
         
         // 🚀 OPTIMISATION: Cache des versions pour éviter les rechargements
         private readonly Dictionary<string, DocumentVersions> _versionsCache = new();
+        
+        // 📂 VUES: Gestion des vues virtuelles
+        private DocumentView? _currentView;
+        private string _currentViewType = "all";
 
         public MainWindow()
         {
@@ -679,16 +684,54 @@ namespace TextLabClient
                     );
                     repoNode.Tag = _selectedRepository;
                     
-                    // Séparer les documents avec et sans catégorie
-                    var documentsWithCategory = documents.Where(d => !string.IsNullOrEmpty(d.Category)).ToList();
-                    var documentsWithoutCategory = documents.Where(d => string.IsNullOrEmpty(d.Category)).ToList();
+                    // 🌳 CONSTRUCTION ARBRE BASÉE SUR LES CHEMINS GIT (pas les catégories !)
+                    await LoggingService.LogInfoAsync($"🌲 Construction arbre Git pour {documents.Count} documents");
                     
-                    // D'abord, ajouter les documents sans catégorie directement sous le repository
-                    foreach (var doc in documentsWithoutCategory.OrderBy(d => d.Title))
+                    // Construire l'arbre hiérarchique basé sur les chemins Git
+                    foreach (var doc in documents.OrderBy(d => d.GitPath ?? d.Title))
                     {
-                        LogDebug($"📄 Traitement document sans catégorie: {doc.Title} (ID: {doc.Id})");
+                        await LoggingService.LogDebugAsync($"📄 Traitement document: {doc.Title} (GitPath: {doc.GitPath})");
                         
-                        var docIcon = GetDocumentIcon(null); // Icône pour document sans catégorie
+                        // Nettoyer le chemin Git (enlever le préfixe documents/ s'il existe)
+                        var gitPath = doc.GitPath ?? "";
+                        if (gitPath.StartsWith("documents/"))
+                        {
+                            gitPath = gitPath.Substring("documents/".Length);
+                        }
+                        
+                        // Séparer le chemin en segments (dossiers)
+                        var pathSegments = gitPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                        
+                        // Naviguer/créer l'arbre hiérarchique
+                        var currentParent = repoNode;
+                        
+                        // Traiter tous les segments SAUF le dernier (qui est le fichier)
+                        for (int i = 0; i < pathSegments.Length - 1; i++)
+                        {
+                            var folderName = pathSegments[i];
+                            
+                            // Chercher si le dossier existe déjà
+                            var existingFolder = currentParent.Children.FirstOrDefault(
+                                child => child.Type == "folder" && child.Name == folderName);
+                            
+                            if (existingFolder == null)
+                            {
+                                // Créer le nouveau dossier
+                                existingFolder = new DocumentTreeItem(
+                                    folderName,
+                                    "📂",
+                                    "",
+                                    "folder"
+                                );
+                                currentParent.Children.Add(existingFolder);
+                                await LoggingService.LogDebugAsync($"📂 Dossier créé: {folderName}");
+                            }
+                            
+                            currentParent = existingFolder;
+                        }
+                        
+                        // Ajouter le document final dans le bon dossier parent
+                        var docIcon = GetDocumentIcon();
                         var docInfo = $"Modifié: {doc.UpdatedAt:dd/MM/yyyy}";
                         
                         var docNode = new DocumentTreeItem(
@@ -708,53 +751,13 @@ namespace TextLabClient
                         );
                         docNode.Children.Add(placeholderNode);
                         
-                        repoNode.Children.Add(docNode);
+                        currentParent.Children.Add(docNode);
                     }
                     
-                    // Ensuite, grouper les documents avec catégorie
-                    var categories = documentsWithCategory.GroupBy(d => d.Category);
+                    // Mettre à jour les compteurs des dossiers
+                    UpdateFolderCounts(repoNode);
                     
-                    foreach (var category in categories.OrderBy(c => c.Key))
-                    {
-                        LogDebug($"📂 Traitement catégorie: {category.Key} ({category.Count()} documents)");
-                        
-                        var categoryNode = new DocumentTreeItem(
-                            category.Key, 
-                            "📂", 
-                            $"{category.Count()} document(s)",
-                            "folder"
-                        );
-                        
-                        foreach (var doc in category.OrderBy(d => d.Title))
-                        {
-                            LogDebug($"📄 Traitement document: {doc.Title} (ID: {doc.Id})");
-                            
-                            var docIcon = GetDocumentIcon(doc.Category);
-                            var docInfo = $"Modifié: {doc.UpdatedAt:dd/MM/yyyy}";
-                            
-                            var docNode = new DocumentTreeItem(
-                                doc.Title ?? "Sans titre", 
-                                docIcon, 
-                                docInfo,
-                                "document"
-                            );
-                            docNode.Tag = doc;
-                            
-                            // Chargement vraiment paresseux : ajouter un placeholder pour tous les documents
-                            // Le nombre de versions sera vérifié seulement lors du premier clic
-                            var placeholderNode = new DocumentTreeItem(
-                                "Cliquer pour voir les versions...", 
-                                "🔍", 
-                                "",
-                                "lazy-placeholder"
-                            );
-                            docNode.Children.Add(placeholderNode);
-                            
-                            categoryNode.Children.Add(docNode);
-                        }
-                        
-                        repoNode.Children.Add(categoryNode);
-                    }
+
                     
                     DocumentsTreeView.Items.Add(repoNode);
                     
@@ -808,6 +811,47 @@ namespace TextLabClient
             {
                 LoadDocumentsButton.IsEnabled = true;
             }
+        }
+
+        /// <summary>
+        /// Met à jour les compteurs de documents dans les dossiers de l'arbre Git
+        /// </summary>
+        private void UpdateFolderCounts(DocumentTreeItem node)
+        {
+            if (node.Type == "folder")
+            {
+                // Compter récursivement les documents dans ce dossier
+                var totalDocs = CountDocumentsInNode(node);
+                node.Info = $"{totalDocs} document(s)";
+            }
+            
+            // Appliquer récursivement à tous les enfants
+            foreach (var child in node.Children)
+            {
+                UpdateFolderCounts(child);
+            }
+        }
+
+        /// <summary>
+        /// Compte le nombre total de documents dans un nœud et ses enfants
+        /// </summary>
+        private int CountDocumentsInNode(DocumentTreeItem node)
+        {
+            var count = 0;
+            
+            foreach (var child in node.Children)
+            {
+                if (child.Type == "document")
+                {
+                    count++;
+                }
+                else if (child.Type == "folder")
+                {
+                    count += CountDocumentsInNode(child);
+                }
+            }
+            
+            return count;
         }
 
         private async System.Threading.Tasks.Task<DocumentVersions?> LoadDocumentVersionsForTree(DocumentTreeItem docNode, Document document)
@@ -916,23 +960,36 @@ namespace TextLabClient
             return null;
         }
 
-        private string GetDocumentIcon(string? category)
+        private string GetDocumentIcon()
         {
-            return category?.ToLower() switch
-            {
-                "technology" => "⚙️",
-                "guides" => "📖",
-                "api" => "🔧",
-                "tutorials" => "🎓",
-                "notes" => "📝",
-                "drafts" => "📄",
-                _ => "📄"
-            };
+            // Retourner une icône générique pour tous les documents
+            return "📄";
         }
 
         private void DocumentsTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            if (e.NewValue is DocumentTreeItem item)
+            // Gestion des vues par tags (TreeViewItem avec Document ou ViewGroup)
+            if (e.NewValue is TreeViewItem treeItem)
+            {
+                if (treeItem.Tag is Document document)
+                {
+                    SetStatus($"Document sélectionné: {document.Title} (Vue par tags) - Double-cliquez pour voir les détails");
+                }
+                else if (treeItem.Tag is ViewGroup group)
+                {
+                    SetStatus($"Groupe sélectionné: {group.Name} ({group.DocumentCount} documents)");
+                }
+                else if (treeItem.Tag is TagHierarchyNode node)
+                {
+                    SetStatus($"Tag sélectionné: {node.Tag.DisplayName} ({node.DocumentCount} documents) - Type: {node.Tag.Type}");
+                }
+                else if (treeItem.Tag is TagTreeNode treeNode)
+                {
+                    SetStatus($"🌳 Tag sélectionné: {treeNode.Name} ({treeNode.DocumentCount}/{treeNode.TotalDescendantsCount}) - Path: {treeNode.Path}");
+                }
+            }
+            // Gestion de la vue normale (DocumentTreeItem)
+            else if (e.NewValue is DocumentTreeItem item)
             {
                 if (item.Type == "document" && item.Tag is Document doc)
                 {
@@ -958,6 +1015,15 @@ namespace TextLabClient
 
         private void DocumentsTreeView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
+            // Gestion des vues par tags (TreeViewItem avec Document direct)
+            if (DocumentsTreeView.SelectedItem is TreeViewItem treeItem && treeItem.Tag is Document document)
+            {
+                // Ouvrir le document depuis une vue par tags
+                OpenDocumentDetails(document);
+                return;
+            }
+            
+            // Gestion de la vue normale (DocumentTreeItem)
             if (DocumentsTreeView.SelectedItem is DocumentTreeItem item)
             {
                 if (item.Type == "document" && item.Tag is Document doc)
@@ -1008,8 +1074,12 @@ namespace TextLabClient
             {
                 SetStatus($"Ouverture des détails pour: {document.Title}");
                 
-                var detailsWindow = new DocumentDetailsWindow(document, _apiService);
+                var detailsWindow = new DocumentDetailsWindow(document, _apiService, _authService);
                 detailsWindow.Owner = this;
+                
+                // 🔔 S'abonner à la notification de mise à jour
+                detailsWindow.DocumentUpdated += OnDocumentUpdated;
+                
                 detailsWindow.ShowDialog();
                 
                 SetStatus($"Détails fermés pour: {document.Title}");
@@ -1022,14 +1092,48 @@ namespace TextLabClient
             }
         }
 
+        /// <summary>
+        /// 🔔 Gestionnaire appelé quand un document est mis à jour dans DocumentDetailsWindow
+        /// </summary>
+        private async void OnDocumentUpdated(string documentId)
+        {
+            try
+            {
+                await LoggingService.LogInfoAsync($"🔔 Document mis à jour reçu: {documentId}");
+                
+                // 🚀 Invalider le cache des versions pour ce document
+                if (_versionsCache.ContainsKey(documentId))
+                {
+                    _versionsCache.Remove(documentId);
+                    await LoggingService.LogInfoAsync($"🗑️ Cache des versions invalidé pour: {documentId}");
+                }
+                
+                // 🔄 Recharger l'arbre des documents pour afficher les nouvelles versions
+                await Task.Delay(500); // Petit délai pour laisser le temps à DocumentDetailsWindow de se fermer
+                
+                await LoggingService.LogInfoAsync($"🔄 Rechargement de l'arbre des documents...");
+                await LoadDocuments();
+                
+                SetStatus($"✅ Arbre mis à jour après modification du document");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lors de la mise à jour après notification: {ex.Message}");
+            }
+        }
+
         private void OpenDocumentVersionDetails(Document document, DocumentVersion version, string versionSha)
         {
             try
             {
                 SetStatus($"Ouverture de la version {version.Version} pour: {document.Title}");
                 
-                var detailsWindow = new DocumentDetailsWindow(document, _apiService, version, versionSha);
+                var detailsWindow = new DocumentDetailsWindow(document, _apiService, _authService, version, versionSha);
                 detailsWindow.Owner = this;
+                
+                // 🔔 S'abonner à la notification de mise à jour (même pour les versions spécifiques)
+                detailsWindow.DocumentUpdated += OnDocumentUpdated;
+                
                 detailsWindow.ShowDialog();
                 
                 SetStatus($"Détails de version fermés pour: {document.Title}");
@@ -1534,7 +1638,7 @@ namespace TextLabClient
                     LogDebug($"✏️ Édition du document: {selectedDocument.Title}");
                     
                     // Ouvrir la fenêtre de détails en mode édition
-                    var detailsWindow = new DocumentDetailsWindow(selectedDocument, _apiService);
+                    var detailsWindow = new DocumentDetailsWindow(selectedDocument, _apiService, _authService);
                     detailsWindow.Owner = this;
                     detailsWindow.ShowDialog();
                     
@@ -1568,7 +1672,7 @@ namespace TextLabClient
                         $"Voulez-vous vraiment supprimer le document ?\n\n" +
                         $"📄 Titre: {selectedDocument.Title}\n" +
                         $"📁 Repository: {selectedDocument.RepositoryName}\n" +
-                        $"📂 Catégorie: {selectedDocument.CategoryDisplay}\n\n" +
+    
                         $"⚠️ Cette action effectue une suppression logique.\n" +
                         $"Le fichier Git ne sera pas supprimé.",
                         "Confirmer la suppression", 
@@ -1781,7 +1885,7 @@ namespace TextLabClient
                     tokenInfo.AppendLine("ℹ️ Utilisez d'abord le bouton Connecter pour vous authentifier");
                 }
 
-                // Afficher dans une nouvelle fenêtre
+                // Afficher dans une nouvelle fenêtre (contenu sélectionnable + bouton Copier)
                 var tokenWindow = new Window
                 {
                     Title = "🔑 Debug Token - TextLab Client",
@@ -1791,26 +1895,63 @@ namespace TextLabClient
                     Owner = this
                 };
 
-                var scrollViewer = new System.Windows.Controls.ScrollViewer
+                var rootGrid = new System.Windows.Controls.Grid();
+                rootGrid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+                rootGrid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+                var toolbar = new System.Windows.Controls.StackPanel
                 {
-                    VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
-                    Padding = new Thickness(15)
+                    Orientation = System.Windows.Controls.Orientation.Horizontal,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                    Margin = new Thickness(10, 10, 10, 5)
                 };
 
-                var textBlock = new System.Windows.Controls.TextBlock
+                var textBox = new System.Windows.Controls.TextBox
                 {
                     Text = tokenInfo.ToString(),
                     FontFamily = new System.Windows.Media.FontFamily("Consolas, Courier New"),
                     FontSize = 11,
                     TextWrapping = TextWrapping.Wrap,
+                    AcceptsReturn = true,
+                    IsReadOnly = true,
                     Background = System.Windows.Media.Brushes.Black,
                     Foreground = System.Windows.Media.Brushes.LimeGreen,
-                    Padding = new Thickness(10)
+                    Padding = new Thickness(10),
+                    BorderThickness = new Thickness(0),
+                    VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto
                 };
 
-                scrollViewer.Content = textBlock;
-                tokenWindow.Content = scrollViewer;
-                
+                var copyAllButton = new System.Windows.Controls.Button
+                {
+                    Content = "Copier",
+                    Padding = new Thickness(12, 6, 12, 6)
+                };
+                copyAllButton.Click += (s, ev) =>
+                {
+                    try
+                    {
+                        var textToCopy = string.IsNullOrEmpty(textBox.SelectedText) ? textBox.Text : textBox.SelectedText;
+                        if (!string.IsNullOrEmpty(textToCopy))
+                        {
+                            Clipboard.SetText(textToCopy);
+                            System.Windows.MessageBox.Show("Contenu copié dans le presse-papiers.", "Copie", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show($"Erreur de copie: {ex.Message}", "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                };
+
+                toolbar.Children.Add(copyAllButton);
+
+                System.Windows.Controls.Grid.SetRow(toolbar, 0);
+                System.Windows.Controls.Grid.SetRow(textBox, 1);
+                rootGrid.Children.Add(toolbar);
+                rootGrid.Children.Add(textBox);
+
+                tokenWindow.Content = rootGrid;
                 tokenWindow.Show();
 
                 await LoggingService.LogInfoAsync("✅ Fenêtre de debug token affichée");
@@ -1894,6 +2035,1116 @@ namespace TextLabClient
                               "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        #region View Management
+
+        /// <summary>
+        /// Handler pour le changement de sélection de vue
+        /// </summary>
+        private async void ViewSelectorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ViewSelectorComboBox.SelectedItem is ComboBoxItem selectedItem)
+            {
+                var viewType = selectedItem.Tag?.ToString() ?? "all";
+                await ChangeViewAsync(viewType);
+            }
+        }
+
+        /// <summary>
+        /// Handler pour le bouton de rafraîchissement de vue
+        /// </summary>
+        private async void RefreshViewButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshCurrentViewAsync();
+        }
+
+        /// <summary>
+        /// Change la vue active
+        /// </summary>
+        private async Task ChangeViewAsync(string viewType)
+        {
+            if (_currentViewType == viewType) return;
+            
+            _currentViewType = viewType;
+            await LoggingService.LogInfoAsync($"📂 Changement de vue: {viewType}");
+            
+            try
+            {
+                ViewInfoText.Text = "Chargement...";
+                
+                switch (viewType)
+                {
+                    case "all":
+                        await LoadAllDocumentsViewAsync();
+                        break;
+                    case "client":
+                        await LoadViewByClientAsync();
+                        break;
+                    case "technology":
+                        await LoadViewByTechnologyAsync();
+                        break;
+                    case "status":
+                        await LoadViewByStatusAsync();
+                        break;
+                    case "hierarchy":
+                        await LoadTagHierarchyViewAsync();
+                        break;
+                    default:
+                        await LoadAllDocumentsViewAsync();
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur changement vue {viewType}: {ex.Message}");
+                ViewInfoText.Text = "Erreur de chargement";
+                MessageBox.Show($"Erreur lors du changement de vue:\n{ex.Message}", 
+                              "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Rafraîchit la vue actuelle
+        /// </summary>
+        private async Task RefreshCurrentViewAsync()
+        {
+            await ChangeViewAsync(_currentViewType);
+        }
+
+        /// <summary>
+        /// Charge la vue "Tous les documents" (comportement normal)
+        /// </summary>
+        private async Task LoadAllDocumentsViewAsync()
+        {
+            ViewInfoText.Text = "Vue standard: arbre par repositories";
+            // Le comportement normal du TreeView des repositories
+            await LoadRepositoriesAsync();
+        }
+
+        /// <summary>
+        /// Charge la vue par client
+        /// </summary>
+        private async Task LoadViewByClientAsync()
+        {
+            if (_apiService == null) return;
+            
+            var viewResponse = await _apiService.GetViewByClientAsync();
+            if (viewResponse != null)
+            {
+                _currentView = ConvertToDocumentView(viewResponse, "client");
+                PopulateTreeWithView(_currentView);
+                var visibleDocuments = _currentView.Groups.Sum(g => g.DocumentCount);
+                ViewInfoText.Text = $"{visibleDocuments} documents groupés par {_currentView.Groups.Count} clients";
+            }
+            else
+            {
+                ViewInfoText.Text = "Erreur de chargement";
+            }
+        }
+
+        /// <summary>
+        /// Charge la vue par technologie
+        /// </summary>
+        private async Task LoadViewByTechnologyAsync()
+        {
+            if (_apiService == null) return;
+            
+            var viewResponse = await _apiService.GetViewByTechnologyAsync();
+            if (viewResponse != null)
+            {
+                _currentView = ConvertToDocumentView(viewResponse, "technology");
+                PopulateTreeWithView(_currentView);
+                var visibleDocuments = _currentView.Groups.Sum(g => g.DocumentCount);
+                ViewInfoText.Text = $"{visibleDocuments} documents groupés par {_currentView.Groups.Count} technologies";
+            }
+            else
+            {
+                ViewInfoText.Text = "Erreur de chargement";
+            }
+        }
+
+        /// <summary>
+        /// Charge la vue par statut
+        /// </summary>
+        private async Task LoadViewByStatusAsync()
+        {
+            if (_apiService == null) return;
+            
+            var viewResponse = await _apiService.GetViewByStatusAsync();
+            if (viewResponse != null)
+            {
+                _currentView = ConvertToDocumentView(viewResponse, "status");
+                PopulateTreeWithView(_currentView);
+                var visibleDocuments = _currentView.Groups.Sum(g => g.DocumentCount);
+                ViewInfoText.Text = $"{visibleDocuments} documents groupés par {_currentView.Groups.Count} statuts";
+            }
+            else
+            {
+                ViewInfoText.Text = "Erreur de chargement";
+            }
+        }
+
+        /// <summary>
+        /// Charge la vue hiérarchique par tags
+        /// </summary>
+                private async Task LoadTagHierarchyViewAsync()
+        {
+            await LoggingService.LogInfoAsync("🔍 DEBUT LoadTagHierarchyViewAsync() - NOUVELLE API SERVEUR");
+            
+            if (_apiService == null)
+            {
+                await LoggingService.LogErrorAsync("❌ _apiService est null dans LoadTagHierarchyViewAsync");
+                return;
+            }
+            
+            // VÉRIFICATION REPOSITORY SÉLECTIONNÉ
+            if (_selectedRepository == null)
+            {
+                ViewInfoText.Text = "⚠️ Sélectionnez d'abord un repository pour voir les tags";
+                await LoggingService.LogWarningAsync("⚠️ Aucun repository sélectionné pour la vue hiérarchique");
+                DocumentsTreeView.Items.Clear();
+                return;
+            }
+            
+            // AFFICHER LE REPOSITORY UTILISÉ
+            ViewInfoText.Text = $"🌳 Chargement hiérarchie tags de {_selectedRepository.Name}...";
+            await LoggingService.LogInfoAsync($"📁 Vue hiérarchique pour repository: {_selectedRepository.Name} ({_selectedRepository.Id})");
+            
+            try
+            {
+                // 🚀 NOUVELLE API PAGINÉE : APPEL ULTRA-EFFICACE EN MODE COMPACT !
+                var hierarchy = await _apiService.GetRepositoryTagHierarchyAsync(
+                    _selectedRepository.Id, 
+                    compact: true,    // Mode compact = pas de documents dans la réponse
+                    tagLimit: 100,    // Plus de tags par défaut
+                    tagOffset: 0);
+                if (hierarchy == null || hierarchy.Hierarchy.Count == 0)
+                {
+                    ViewInfoText.Text = "Aucune hiérarchie de tags trouvée";
+                    await LoggingService.LogWarningAsync("📋 Aucune hiérarchie trouvée");
+                    DocumentsTreeView.Items.Clear();
+                    return;
+                }
+                
+                // Construire l'arbre depuis la réponse API optimisée
+                await PopulateTreeWithServerHierarchy(hierarchy);
+                
+                ViewInfoText.Text = $"🌳 {_selectedRepository.Name}: {hierarchy.TotalDocuments} documents en hiérarchie ({hierarchy.Hierarchy.Count} types de tags)";
+                
+                await LoggingService.LogInfoAsync($"✅ Hiérarchie affichée pour {_selectedRepository.Name}: {hierarchy.Hierarchy.Count} types, {hierarchy.TotalDocuments} documents");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur chargement hiérarchie: {ex.Message}");
+                ViewInfoText.Text = "Erreur de chargement";
+            }
+        }
+
+        /// <summary>
+        /// Convertit ViewResponse en DocumentView
+        /// </summary>
+        private DocumentView ConvertToDocumentView(ViewResponse response, string viewType)
+        {
+            var view = new DocumentView
+            {
+                Type = viewType,
+                Name = response.ViewName,
+                TotalDocuments = response.TotalDocuments
+            };
+
+            // Traiter la structure "organization" de l'API
+            if (response.Organization != null)
+            {
+                foreach (var orgKvp in response.Organization)
+                {
+                    var groupName = orgKvp.Key;
+                    
+                    // Gérer le cas "Non défini" -> ignorer ou renommer
+                    if (groupName == "Non défini")
+                        continue;
+                    
+                    var viewGroup = new ViewGroup
+                    {
+                        Id = Guid.NewGuid().ToString(), // Générer un ID temporaire
+                        Name = groupName,
+                        Icon = GetDefaultIcon(viewType),
+                        Color = "#0066CC",
+                        Documents = new List<Document>()
+                    };
+                    
+                    // Extraire les documents de la structure imbriquée
+                    if (orgKvp.Value is Newtonsoft.Json.Linq.JObject jObj)
+                    {
+                        foreach (var subGroup in jObj)
+                        {
+                            if (subGroup.Value is Newtonsoft.Json.Linq.JArray docArray)
+                            {
+                                var documents = docArray.ToObject<List<Document>>();
+                                if (documents != null)
+                                {
+                                    viewGroup.Documents.AddRange(documents);
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (viewGroup.Documents.Count > 0)
+                    {
+                        view.Groups.Add(viewGroup);
+                    }
+                }
+            }
+
+            return view;
+        }
+
+        /// <summary>
+        /// Obtient le nom d'affichage d'une vue
+        /// </summary>
+        private string GetViewDisplayName(string viewType)
+        {
+            return viewType switch
+            {
+                "client" => "Par Client",
+                "technology" => "Par Technologie", 
+                "status" => "Par Statut",
+                _ => "Tous les documents"
+            };
+        }
+
+        /// <summary>
+        /// Obtient l'icône par défaut selon le type de vue
+        /// </summary>
+        private string GetDefaultIcon(string viewType)
+        {
+            return viewType switch
+            {
+                "client" => "👔",
+                "technology" => "⚙️",
+                "status" => "📊",
+                _ => "📄"
+            };
+        }
+
+        /// <summary>
+        /// Remplit le TreeView avec une vue structurée
+        /// </summary>
+        private void PopulateTreeWithView(DocumentView view)
+        {
+            DocumentsTreeView.Items.Clear();
+            
+            foreach (var group in view.Groups)
+            {
+                var groupItem = new TreeViewItem
+                {
+                    Header = $"{group.Icon} {group.Name} ({group.DocumentCount})",
+                    Tag = group,
+                    IsExpanded = false
+                };
+
+                foreach (var document in group.Documents)
+                {
+                    var docItem = new TreeViewItem
+                    {
+                        Header = $"📄 {document.Title}",
+                        Tag = document
+                    };
+                    groupItem.Items.Add(docItem);
+                }
+                
+                DocumentsTreeView.Items.Add(groupItem);
+            }
+        }
+
+        /// <summary>
+        /// Construit l'arbre hiérarchique des tags à partir de la réponse API
+        /// </summary>
+        private async Task<List<TagHierarchyNode>> BuildTagHierarchyAsync(object hierarchy, List<Tag> allTags)
+        {
+            var rootNodes = new List<TagHierarchyNode>();
+            
+            try
+            {
+                // Convertir la hiérarchie en dictionnaire de tags
+                var tagDict = allTags.ToDictionary(t => t.Id, t => t);
+                
+                // Parser la hiérarchie (structure à déterminer selon l'API réelle)
+                await LoggingService.LogInfoAsync($"🔍 Analyse hiérarchie: {hierarchy.GetType()}");
+                
+                // Pour l'instant, créons une hiérarchie simple basée sur les types de tags
+                var tagsByType = allTags.GroupBy(t => t.Type).ToList();
+                
+                foreach (var typeGroup in tagsByType)
+                {
+                    if (string.IsNullOrEmpty(typeGroup.Key)) continue;
+                    
+                    var typeTag = new Tag
+                    {
+                        Id = $"type_{typeGroup.Key}",
+                        Name = GetTypeDisplayName(typeGroup.Key),
+                        Type = typeGroup.Key,
+                        Icon = GetTypeIcon(typeGroup.Key),
+                        Color = "#0066CC"
+                    };
+                    
+                    var typeNode = new TagHierarchyNode
+                    {
+                        Tag = typeTag
+                    };
+                    
+                    // Ajouter les tags de ce type comme enfants
+                    foreach (var tag in typeGroup)
+                    {
+                        var tagNode = new TagHierarchyNode
+                        {
+                            Tag = tag,
+                            Parent = typeNode
+                        };
+                        
+                        // Récupérer les documents pour ce tag et compter
+                        var documents = await GetDocumentsForTagAsync(tag.Id);
+                        tagNode.DocumentCount = documents.Count;
+                        tagNode.DirectDocumentCount = documents.Count;
+                        
+                        typeNode.Children.Add(tagNode);
+                    }
+                    
+                    // Mettre à jour le compteur du nœud parent
+                    typeNode.DocumentCount = typeNode.Children.Sum(c => c.DocumentCount);
+                    
+                    rootNodes.Add(typeNode);
+                }
+                
+                await LoggingService.LogInfoAsync($"✅ Hiérarchie construite: {rootNodes.Count} types, {allTags.Count} tags");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur construction hiérarchie: {ex.Message}");
+            }
+            
+            return rootNodes;
+        }
+        
+        // ❌ SUPPRIMÉ : GetAllDocumentsWithTagsAsync() - Remplacé par l'API serveur optimisée
+        
+        /// <summary>
+        /// Extrait les documents d'une réponse de vue (réutilise la logique de ConvertToDocumentView)
+        /// </summary>
+        private List<Document> ExtractDocumentsFromViewResponse(ViewResponse response)
+        {
+            var documents = new List<Document>();
+            
+            try
+            {
+                if (response.Organization != null)
+                {
+                    foreach (var orgKvp in response.Organization)
+                    {
+                        // Ignorer "Non défini"
+                        if (orgKvp.Key == "Non défini") continue;
+                        
+                        // Extraire les documents de la structure imbriquée
+                        if (orgKvp.Value is Newtonsoft.Json.Linq.JObject jObj)
+                        {
+                            foreach (var innerKvp in jObj)
+                            {
+                                if (innerKvp.Value is Newtonsoft.Json.Linq.JArray jArray)
+                                {
+                                    foreach (var item in jArray)
+                                    {
+                                        try
+                                        {
+                                            var document = item.ToObject<Document>();
+                                            if (document != null)
+                                            {
+                                                documents.Add(document);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            LoggingService.LogErrorAsync($"❌ Erreur désérialisation document: {ex.Message}").Wait();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggingService.LogErrorAsync($"❌ Erreur extraction documents: {ex.Message}").Wait();
+            }
+            
+            return documents;
+        }
+        
+        // ❌ SUPPRIMÉ : BuildTagHierarchyFromDocuments() - Remplacé par PopulateTreeWithServerHierarchy()
+        
+        /// <summary>
+        /// Construit une hiérarchie simple basée sur les types de tags (version simplifiée)
+        /// </summary>
+        private async Task<List<TagHierarchyNode>> BuildSimpleTagHierarchyAsync(List<Tag> allTags)
+        {
+            var rootNodes = new List<TagHierarchyNode>();
+            
+            try
+            {
+                await LoggingService.LogInfoAsync($"🔧 Construction hiérarchie simple avec {allTags.Count} tags");
+                
+                // Grouper par type de tag
+                var tagsByType = allTags.GroupBy(t => string.IsNullOrEmpty(t.Type) ? "autres" : t.Type).ToList();
+                
+                foreach (var typeGroup in tagsByType)
+                {
+                    var typeTag = new Tag
+                    {
+                        Id = $"type_{typeGroup.Key}",
+                        Name = GetTypeDisplayName(typeGroup.Key),
+                        Type = typeGroup.Key,
+                        Icon = GetTypeIcon(typeGroup.Key),
+                        Color = "#0066CC"
+                    };
+                    
+                    var typeNode = new TagHierarchyNode
+                    {
+                        Tag = typeTag
+                    };
+                    
+                    // Ajouter les tags de ce type comme enfants
+                    foreach (var tag in typeGroup)
+                    {
+                        var tagNode = new TagHierarchyNode
+                        {
+                            Tag = tag,
+                            Parent = typeNode
+                        };
+                        
+                        // Récupérer les documents pour ce tag et compter
+                        var documents = await GetDocumentsForTagAsync(tag.Id);
+                        tagNode.DocumentCount = documents.Count;
+                        tagNode.DirectDocumentCount = documents.Count;
+                        
+                        typeNode.Children.Add(tagNode);
+                        
+                        await LoggingService.LogInfoAsync($"📎 Tag '{tag.DisplayName}': {documents.Count} documents");
+                    }
+                    
+                    // Mettre à jour le compteur du nœud parent
+                    typeNode.DocumentCount = typeNode.Children.Sum(c => c.DocumentCount);
+                    
+                    if (typeNode.DocumentCount > 0) // N'ajouter que les types qui ont des documents
+                    {
+                        rootNodes.Add(typeNode);
+                        await LoggingService.LogInfoAsync($"📁 Type '{typeGroup.Key}': {typeNode.DocumentCount} documents total");
+                    }
+                }
+                
+                await LoggingService.LogInfoAsync($"✅ Hiérarchie simple construite: {rootNodes.Count} types");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur construction hiérarchie simple: {ex.Message}");
+            }
+            
+            return rootNodes;
+        }
+        
+        /// <summary>
+        /// Récupère les documents associés à un tag spécifique
+        /// </summary>
+        private async Task<List<Document>> GetDocumentsForTagAsync(string tagId)
+        {
+            try
+            {
+                if (_apiService == null) return new List<Document>();
+                
+                // Utiliser l'API de recherche par tags
+                var searchRequest = new TagSearchRequest
+                {
+                    AndFilters = new List<TagFilter>
+                    {
+                        new TagFilter { Values = new List<string> { tagId } }
+                    },
+                    Limit = 100
+                };
+                
+                var searchResponse = await _apiService.FindDocumentsByTagsAsync(searchRequest);
+                return searchResponse?.Documents ?? new List<Document>();
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur récupération documents pour tag {tagId}: {ex.Message}");
+                return new List<Document>();
+            }
+        }
+        
+        /// <summary>
+        /// Popule le TreeView avec la hiérarchie des tags
+        /// </summary>
+        private void PopulateTreeWithHierarchy(List<TagHierarchyNode> rootNodes)
+        {
+            DocumentsTreeView.Items.Clear();
+            
+            foreach (var rootNode in rootNodes)
+            {
+                var rootItem = CreateTreeItemFromNode(rootNode);
+                DocumentsTreeView.Items.Add(rootItem);
+            }
+        }
+        
+        /// <summary>
+        /// Crée un TreeViewItem à partir d'un nœud de hiérarchie
+        /// </summary>
+        private TreeViewItem CreateTreeItemFromNode(TagHierarchyNode node)
+        {
+            var displayName = node.Tag?.DisplayName ?? node.Tag?.Name ?? "Inconnu";
+            var icon = node.Tag?.Icon;
+            
+            // Optimisé : Plus de logs debug inutiles
+            
+            // Si le displayName commence déjà par une icône emoji, ne pas en ajouter
+            var header = "";
+            if (!string.IsNullOrEmpty(icon) && !displayName.StartsWith(icon))
+            {
+                header = $"{icon} {displayName} ({node.DocumentCount})";
+            }
+            else if (string.IsNullOrEmpty(icon))
+            {
+                // Pas d'icône définie, utiliser l'icône par défaut du type
+                var defaultIcon = GetTypeIcon(node.Tag?.Type ?? "other");
+                header = $"{defaultIcon} {displayName} ({node.DocumentCount})";
+            }
+            else
+            {
+                // DisplayName contient déjà l'icône ou icône déjà incluse
+                header = $"{displayName} ({node.DocumentCount})";
+            }
+            
+            // Optimisé : Affichage direct sans log debug
+            
+            var item = new TreeViewItem
+            {
+                Header = header,
+                Tag = node,
+                IsExpanded = node.IsExpanded
+            };
+            
+            // Ajouter les enfants (autres tags)
+            foreach (var child in node.Children)
+            {
+                var childItem = CreateTreeItemFromNode(child);
+                item.Items.Add(childItem);
+            }
+            
+            // ❌ SUPPRIMÉ : Ajout direct des documents - Remplacé par lazy loading dans PopulateTreeWithServerHierarchy
+            
+            return item;
+        }
+        
+        // ❌ SUPPRIMÉ : GetDocumentsForTag() - Remplacé par lazy loading avec API serveur
+        
+        /// <summary>
+        /// 🌳 RÉVOLUTION : Affiche la VRAIE hiérarchie récursive du serveur !
+        /// </summary>
+        private async Task PopulateTreeWithServerHierarchy(RepositoryTagHierarchy hierarchy)
+        {
+            DocumentsTreeView.Items.Clear();
+            
+            await LoggingService.LogInfoAsync($"🌳 RÉVOLUTION : Construction arbre hiérarchique avec {hierarchy.Hierarchy.Count} nœuds racines, profondeur max {hierarchy.MaxDepth}");
+            
+            // 🌳 RÉVOLUTION : Plus de groupes par type - VRAIE hiérarchie !
+            foreach (var rootNode in hierarchy.Hierarchy)
+            {
+                var rootItem = CreateTreeViewItemFromNode(rootNode);
+                DocumentsTreeView.Items.Add(rootItem);
+                
+                await LoggingService.LogInfoAsync($"🌳 Nœud racine ajouté: '{rootNode.Name}' (Level {rootNode.Level}, {rootNode.DocumentCount} docs, {rootNode.TotalDescendantsCount} total)");
+            }
+            
+            await LoggingService.LogInfoAsync($"✅ Arbre hiérarchique construit : {hierarchy.TotalTags} tags, {hierarchy.TotalDocuments} documents");
+        }
+
+        /// <summary>
+        /// 🌳 RÉVOLUTION : Crée un TreeViewItem récursif depuis TagTreeNode
+        /// </summary>
+        private TreeViewItem CreateTreeViewItemFromNode(TagTreeNode node)
+        {
+            // 🎨 Icône intelligente
+            var icon = !string.IsNullOrEmpty(node.Icon) ? node.Icon : GetDefaultIconForType(node.Type);
+            
+            // 📊 Compteurs intelligents - afficher descendants si différent
+            var countDisplay = node.TotalDescendantsCount > node.DocumentCount 
+                ? $"({node.DocumentCount}/{node.TotalDescendantsCount})"
+                : $"({node.DocumentCount})";
+            
+            var treeItem = new TreeViewItem
+            {
+                Header = $"{icon} {node.Name} {countDisplay}",
+                Tag = node, // Important : stocker le nœud complet
+                IsExpanded = false // 🚀 Collapsed par défaut pour lazy loading
+            };
+            
+            // 🌳 RÉCURSION : Ajouter tous les enfants
+            foreach (var child in node.Children)
+            {
+                var childItem = CreateTreeViewItemFromNode(child);
+                treeItem.Items.Add(childItem);
+            }
+            
+            // 📄 LAZY LOADING INTELLIGENT : Gérer documents + enfants
+            if (node.Documents?.Any() == true)
+            {
+                // Documents déjà chargés
+                foreach (var doc in node.Documents)
+                {
+                    var docItem = new TreeViewItem
+                    {
+                        Header = $"📄 {doc.Title}",
+                        Tag = doc
+                    };
+                    treeItem.Items.Add(docItem);
+                }
+            }
+            else if (node.DocumentCount > 0)
+            {
+                // 🔧 FIX : Si le nœud a des enfants, charger immédiatement les documents
+                if (node.Children.Any())
+                {
+                    // Charger automatiquement en arrière-plan pour les nœuds avec enfants
+                    LoadNodeDocumentsInBackground(treeItem, node);
+                }
+                else
+                {
+                    // Placeholder classique pour nœuds sans enfants
+                    var placeholderItem = new TreeViewItem
+                    {
+                        Header = $"⏳ Chargement de {node.DocumentCount} documents...",
+                        Tag = $"placeholder_{node.Id}"
+                    };
+                    treeItem.Items.Add(placeholderItem);
+                }
+            }
+            
+            // 🚀 EVENT : Charger documents à l'expansion
+            treeItem.Expanded += TagItem_Expanded;
+            
+            return treeItem;
+        }
+
+        /// <summary>
+        /// 🎨 Icône par défaut selon le type de tag
+        /// </summary>
+        private string GetDefaultIconForType(string type)
+        {
+            return type.ToLowerInvariant() switch
+            {
+                "client" => "🏢",
+                "technology" => "⚙️",
+                "status" => "🔄",
+
+                "priority" => "⭐",
+                _ => "🏷️"
+            };
+        }
+
+        /// <summary>
+        /// 🌳 Construit la hiérarchie parent-enfant des tags (MÉTHODE INTELLIGENTE)
+        /// </summary>
+        private async Task<List<TagHierarchyItem>> BuildTagHierarchy(List<TagWithDocuments> tags)
+        {
+            var hierarchy = new List<TagHierarchyItem>();
+            var tagDictionary = new Dictionary<string, TagHierarchyItem>();
+            
+            // Créer les items hiérarchiques
+            foreach (var tag in tags)
+            {
+                var item = new TagHierarchyItem
+                {
+                    Tag = tag,
+                    Children = new List<TagHierarchyItem>()
+                };
+                hierarchy.Add(item);
+                tagDictionary[tag.Id] = item;
+            }
+            
+            // 🎯 MÉTHODE 1 : Utiliser ParentId si disponible (le plus fiable)
+            foreach (var item in hierarchy)
+            {
+                if (!string.IsNullOrEmpty(item.Tag.ParentId) && tagDictionary.ContainsKey(item.Tag.ParentId))
+                {
+                    var parent = tagDictionary[item.Tag.ParentId];
+                    item.Parent = parent;
+                    parent.Children.Add(item);
+                    continue;
+                }
+                
+                // 🎯 MÉTHODE 2 : Utiliser Children si fournis par l'API
+                if (item.Tag.Children?.Any() == true)
+                {
+                    foreach (var childTag in item.Tag.Children)
+                    {
+                        var existingChild = hierarchy.FirstOrDefault(h => h.Tag.Id == childTag.Id);
+                        if (existingChild != null)
+                        {
+                            existingChild.Parent = item;
+                            item.Children.Add(existingChild);
+                        }
+                    }
+                    continue;
+                }
+            }
+            
+            // 🎯 MÉTHODE 3 : Fallback - Détection intelligente par noms/path
+            foreach (var item in hierarchy.Where(h => h.Parent == null))
+            {
+                // Si on a un Path, on peut en déduire la hiérarchie
+                if (!string.IsNullOrEmpty(item.Tag.Path) && item.Tag.Path.Contains(">"))
+                {
+                    var pathParts = item.Tag.Path.Split('>').Select(p => p.Trim()).ToList();
+                    if (pathParts.Count > 1)
+                    {
+                        // Chercher le parent dans le path
+                        var parentName = pathParts[pathParts.Count - 2]; // Avant-dernier élément
+                        var parent = hierarchy.FirstOrDefault(h => 
+                            h.Tag.Name.Equals(parentName, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (parent != null)
+                        {
+                            item.Parent = parent;
+                            parent.Children.Add(item);
+                        }
+                    }
+                }
+                // Sinon, détection par inclusion de noms INTELLIGENTE
+                else
+                {
+                    // 🧠 LOGIQUE MÉTIER : Détection spécifique pour nos tags
+                    var potentialParents = hierarchy.Where(h => h != item).ToList();
+                    
+                    foreach (var potentialParent in potentialParents)
+                    {
+                        var parentName = potentialParent.Tag.Name.ToLowerInvariant();
+                        var itemName = item.Tag.Name.ToLowerInvariant();
+                        
+                        // 🎯 RÈGLES SPÉCIFIQUES basées sur ce qu'on voit dans l'interface :
+                        bool isParent = false;
+                        
+                        // 1. Si tag contient le nom du parent
+                        if (itemName.Contains(parentName) && itemName != parentName)
+                            isParent = true;
+                            
+                        // 2. Règles métier spécifiques
+                        if (parentName == "text lab" && (itemName == "aitm" || itemName.Contains("textlab")))
+                            isParent = true;
+                            
+                        // 3. Si parent plus court et enfant commence par parent
+                        if (itemName.StartsWith(parentName) && itemName.Length > parentName.Length)
+                            isParent = true;
+                        
+                        if (isParent)
+                        {
+                            item.Parent = potentialParent;
+                            potentialParent.Children.Add(item);
+                            await LoggingService.LogInfoAsync($"🔗 Relation détectée: '{item.Tag.Name}' est enfant de '{potentialParent.Tag.Name}'");
+                            break; // Premier parent trouvé = le bon
+                        }
+                    }
+                }
+            }
+            
+            return hierarchy;
+        }
+
+        /// <summary>
+        /// 🌳 Crée un TreeViewItem hiérarchique récursif
+        /// </summary>
+        private TreeViewItem CreateHierarchicalTagItem(TagHierarchyItem tagItem, List<TagHierarchyItem> allItems)
+        {
+            var tag = tagItem.Tag;
+            var tagIcon = !string.IsNullOrEmpty(tag.Icon) ? tag.Icon : "🏷️";
+            
+            var treeItem = new TreeViewItem
+            {
+                Header = $"{tagIcon} {tag.Name} ({tag.DocumentCount})",
+                Tag = tag, // Pour récupérer les documents
+                IsExpanded = false // 🚀 LAZY LOADING : Collapsed par défaut
+            };
+            
+            // 🌳 Ajouter les enfants AVANT les documents
+            foreach (var child in tagItem.Children.OrderBy(c => c.Tag.Name))
+            {
+                var childItem = CreateHierarchicalTagItem(child, allItems);
+                treeItem.Items.Add(childItem);
+            }
+            
+            // 📄 Ajouter les documents de ce tag (pas des enfants)
+            if (tag.Documents?.Any() == true)
+            {
+                foreach (var doc in tag.Documents)
+                {
+                    var docItem = new TreeViewItem
+                    {
+                        Header = $"📄 {doc.Title}",
+                        Tag = doc // Important pour l'ouverture
+                    };
+                    treeItem.Items.Add(docItem);
+                }
+            }
+            else if (tag.DocumentCount > 0 && !tagItem.Children.Any())
+            {
+                // Placeholder SEULEMENT si pas d'enfants (sinon confus)
+                var placeholderItem = new TreeViewItem
+                {
+                    Header = $"⏳ Chargement de {tag.DocumentCount} documents...",
+                    Tag = $"placeholder_{tag.Id}"
+                };
+                treeItem.Items.Add(placeholderItem);
+            }
+            
+            // 🚀 EVENT : Charger documents à l'expansion
+            treeItem.Expanded += TagItem_Expanded;
+            
+            return treeItem;
+        }
+
+        /// <summary>
+        /// 🌳 Structure hiérarchique pour les tags
+        /// </summary>
+        private class TagHierarchyItem
+        {
+            public TagWithDocuments Tag { get; set; } = null!;
+            public TagHierarchyItem? Parent { get; set; }
+            public List<TagHierarchyItem> Children { get; set; } = new();
+        }
+
+        /// <summary>
+        /// 🚀 LAZY LOADING RÉVOLUTIONNAIRE : Charge documents pour TagTreeNode
+        /// </summary>
+        private async void TagItem_Expanded(object sender, RoutedEventArgs e)
+        {
+            // 🌳 RÉVOLUTION : Support TagTreeNode ET legacy TagWithDocuments
+            if (sender is TreeViewItem treeItem)
+            {
+                // Vérifier si c'est un placeholder
+                var hasPlaceholder = treeItem.Items.Count == 1 && 
+                    treeItem.Items[0] is TreeViewItem placeholder &&
+                    placeholder.Tag is string placeholderTag &&
+                    placeholderTag.StartsWith("placeholder_");
+
+                if (hasPlaceholder)
+                {
+                    // 🌳 NOUVEAU : TagTreeNode révolutionnaire
+                    if (treeItem.Tag is TagTreeNode node)
+                    {
+                        await LoadNodeDocumentsAsync(treeItem, node);
+                    }
+                    // 🔄 LEGACY : TagWithDocuments (compatibility)
+                    else if (treeItem.Tag is TagWithDocuments tag)
+                    {
+                        await LoadTagDocumentsAsync(treeItem, tag);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 🔧 FIX : Charge documents en arrière-plan sans bloquer UI
+        /// </summary>
+        private async void LoadNodeDocumentsInBackground(TreeViewItem treeItem, TagTreeNode node)
+        {
+            try
+            {
+                await LoadNodeDocumentsAsync(treeItem, node);
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur chargement arrière-plan pour '{node.Name}': {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 🚀 RÉVOLUTION : Charge documents pour un TagTreeNode avec nouvelle API
+        /// </summary>
+        private async Task LoadNodeDocumentsAsync(TreeViewItem treeItem, TagTreeNode node)
+        {
+            try
+            {
+                if (_apiService == null || _selectedRepository == null) return;
+
+                // Changer le placeholder en "Chargement..." (sur UI thread)
+                Dispatcher.Invoke(() =>
+                {
+                    var placeholder = treeItem.Items.Cast<TreeViewItem>()
+                        .FirstOrDefault(item => item.Tag is string tagStr && tagStr.StartsWith("placeholder_"));
+                    
+                    if (placeholder != null)
+                    {
+                        placeholder.Header = "⏳ Chargement en cours...";
+                    }
+                });
+
+                // ✅ NOUVELLE API : Charger documents avec l'endpoint dédié !
+                var documents = await _apiService.GetRepositoryTagDocumentsAsync(_selectedRepository.Id, node.Id, limit: 50) 
+                    ?? new List<Document>();
+                
+                // Mettre à jour le nœud avec les documents chargés
+                node.Documents = documents;
+
+                // 🔧 FIX : Mise à jour UI sur le bon thread
+                Dispatcher.Invoke(() =>
+                {
+                    // Chercher et supprimer SEULEMENT les placeholders (pas les enfants tags !)
+                    var placeholdersToRemove = treeItem.Items.Cast<TreeViewItem>()
+                        .Where(item => item.Tag is string tagStr && tagStr.StartsWith("placeholder_"))
+                        .ToList();
+                    
+                    foreach (var placeholder in placeholdersToRemove)
+                    {
+                        treeItem.Items.Remove(placeholder);
+                    }
+
+                    // Ajouter les vrais documents
+                    foreach (var doc in documents)
+                    {
+                        var docItem = new TreeViewItem
+                        {
+                            Header = $"📄 {doc.Title}",
+                            Tag = doc // Important pour l'ouverture
+                        };
+                        treeItem.Items.Add(docItem);
+                    }
+
+                    // Si aucun document, afficher message
+                    if (!documents.Any())
+                    {
+                        var emptyItem = new TreeViewItem
+                        {
+                            Header = "📭 Aucun document",
+                            IsEnabled = false
+                        };
+                        treeItem.Items.Add(emptyItem);
+                    }
+                });
+
+                await LoggingService.LogInfoAsync($"🚀 Lazy loading révolutionnaire: {documents.Count} documents chargés pour tag '{node.Name}' (Path: {node.Path})");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lazy loading documents pour tag '{node.Name}': {ex.Message}");
+                
+                // Afficher erreur dans l'interface
+                treeItem.Items.Clear();
+                var errorItem = new TreeViewItem
+                {
+                    Header = "❌ Erreur de chargement",
+                    IsEnabled = false
+                };
+                treeItem.Items.Add(errorItem);
+            }
+        }
+
+        /// <summary>
+        /// 🚀 LAZY LOADING : Charge les documents d'un tag spécifique
+        /// </summary>
+        private async Task LoadTagDocumentsAsync(TreeViewItem tagItem, TagWithDocuments tag)
+        {
+            try
+            {
+                if (_apiService == null || _selectedRepository == null) return;
+
+                // Changer le placeholder en "Chargement..."
+                if (tagItem.Items.Count > 0)
+                {
+                    var placeholder = (TreeViewItem)tagItem.Items[0];
+                    placeholder.Header = "⏳ Chargement en cours...";
+                }
+
+                // ✅ VRAIE API : Charger documents avec pagination !
+                var documents = await _apiService.GetTagDocumentsAsync(tag.Id, limit: 50, offset: 0) ?? new List<Document>();
+                
+                // Fallback vers données serveur si API échoue
+                if (!documents.Any() && tag.Documents?.Any() == true)
+                {
+                    documents = tag.Documents;
+                    await LoggingService.LogInfoAsync($"🔄 Fallback vers données serveur pour tag '{tag.Name}'");
+                }
+
+                // Supprimer le placeholder
+                tagItem.Items.Clear();
+
+                // Ajouter les vrais documents
+                foreach (var doc in documents)
+                {
+                    var docItem = new TreeViewItem
+                    {
+                        Header = $"📄 {doc.Title}",
+                        Tag = doc // Important pour l'ouverture
+                    };
+                    tagItem.Items.Add(docItem);
+                }
+
+                // Si aucun document, afficher message
+                if (!documents.Any())
+                {
+                    var emptyItem = new TreeViewItem
+                    {
+                        Header = "📭 Aucun document",
+                        IsEnabled = false
+                    };
+                    tagItem.Items.Add(emptyItem);
+                }
+
+                await LoggingService.LogInfoAsync($"🚀 Lazy loading: {documents.Count} documents chargés pour tag '{tag.Name}'");
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur lazy loading documents pour tag '{tag.Name}': {ex.Message}");
+                
+                // Afficher erreur dans l'interface
+                tagItem.Items.Clear();
+                var errorItem = new TreeViewItem
+                {
+                    Header = "❌ Erreur de chargement",
+                    IsEnabled = false
+                };
+                tagItem.Items.Add(errorItem);
+            }
+        }
+
+        /// <summary>
+        /// Obtient le nom d'affichage pour un type de tag
+        /// </summary>
+        private string GetTypeDisplayName(string type)
+        {
+            return type switch
+            {
+                "client" => "👔 Clients",
+                "technology" => "⚙️ Technologies",
+                "status" => "📊 Statuts",
+
+                "priority" => "⭐ Priorités",
+                _ => $"🏷️ {type.ToUpperInvariant()}"
+            };
+        }
+        
+        /// <summary>
+        /// Obtient l'icône pour un type de tag
+        /// </summary>
+        private string GetTypeIcon(string type)
+        {
+            return type switch
+            {
+                "client" => "👔",
+                "technology" => "⚙️",
+                "status" => "📊",
+
+                "priority" => "⭐",
+                _ => "🏷️"
+            };
+        }
+
+        #endregion
 
         protected override void OnClosed(EventArgs e)
         {

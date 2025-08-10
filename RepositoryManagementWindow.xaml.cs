@@ -604,5 +604,40 @@ namespace TextLabClient
         {
             DialogResult = false;
         }
+
+        private void BtnCopyToken_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string tokenToCopy = TxtTokenPlain.Visibility == Visibility.Visible ? TxtTokenPlain.Text : TxtToken.Password;
+                if (!string.IsNullOrEmpty(tokenToCopy))
+                {
+                    Clipboard.SetText(tokenToCopy);
+                    MessageBox.Show("Token copié dans le presse-papiers.", "Copie", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Aucun token à copier.", "Copie", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur de copie: {ex.Message}", "Erreur", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ChkShowToken_Checked(object sender, RoutedEventArgs e)
+        {
+            TxtTokenPlain.Text = TxtToken.Password;
+            TxtTokenPlain.Visibility = Visibility.Visible;
+            TxtToken.Visibility = Visibility.Collapsed;
+        }
+
+        private void ChkShowToken_Unchecked(object sender, RoutedEventArgs e)
+        {
+            TxtToken.Password = TxtTokenPlain.Text;
+            TxtTokenPlain.Visibility = Visibility.Collapsed;
+            TxtToken.Visibility = Visibility.Visible;
+        }
     }
 } 

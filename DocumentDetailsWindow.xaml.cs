@@ -18,6 +18,7 @@ namespace TextLabClient
     public partial class DocumentDetailsWindow : Window
     {
         private readonly TextLabApiService _apiService;
+        private readonly LLMCenterAuthService _authService;
         private Document _document;
         private DocumentContent? _documentContent;
         private DocumentVersions? _documentVersions;
@@ -35,13 +36,17 @@ namespace TextLabClient
         // Variables pour la gestion des tags
         private List<DocumentTag> _documentTags = new List<DocumentTag>();
         private List<Tag> _availableTags = new List<Tag>();
+        
+        // 🔔 Event pour notifier MainWindow qu'un document a été mis à jour
+        public event Action<string>? DocumentUpdated;
 
         // Constructeur original pour la version actuelle
-        public DocumentDetailsWindow(Document document, TextLabApiService apiService)
+        public DocumentDetailsWindow(Document document, TextLabApiService apiService, LLMCenterAuthService authService)
         {
             InitializeComponent();
             _document = document;
             _apiService = apiService;
+            _authService = authService;
             _specificVersion = null;
             _specificVersionSha = null;
             _isViewingSpecificVersion = false;
@@ -60,11 +65,12 @@ namespace TextLabClient
         }
 
         // Nouveau constructeur pour une version spécifique
-        public DocumentDetailsWindow(Document document, TextLabApiService apiService, DocumentVersion specificVersion, string versionSha)
+        public DocumentDetailsWindow(Document document, TextLabApiService apiService, LLMCenterAuthService authService, DocumentVersion specificVersion, string versionSha)
         {
             InitializeComponent();
             _document = document;
             _apiService = apiService;
+            _authService = authService;
             _specificVersion = specificVersion;
             _specificVersionSha = versionSha;
             _isViewingSpecificVersion = true;
@@ -88,9 +94,7 @@ namespace TextLabClient
                 // Métadonnées avec informations de version
                 DocumentIdText.Text = _document.Id;
                 DocumentTitleDetailText.Text = $"{_document.Title ?? "Sans titre"} (Version {_specificVersion.Version})";
-                DocumentCategoryText.Text = !string.IsNullOrEmpty(_document.CategoryDisplay) 
-                    ? _document.CategoryDisplay 
-                    : (_document.Category ?? "Non catégorisé");
+
                 DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
                     ? _document.RepositoryName 
                     : _document.RepositoryId;
@@ -125,9 +129,7 @@ namespace TextLabClient
                 // Métadonnées
                 DocumentIdText.Text = _document.Id;
                 DocumentTitleDetailText.Text = _document.Title ?? "Sans titre";
-                DocumentCategoryText.Text = !string.IsNullOrEmpty(_document.CategoryDisplay) 
-                    ? _document.CategoryDisplay 
-                    : (_document.Category ?? "Non catégorisé");
+
                 DocumentRepositoryText.Text = !string.IsNullOrEmpty(_document.RepositoryName) 
                     ? _document.RepositoryName 
                     : _document.RepositoryId;
@@ -211,7 +213,8 @@ namespace TextLabClient
                 // Choisir la méthode de chargement selon le contexte
                 if (_isViewingSpecificVersion && !string.IsNullOrEmpty(_specificVersionSha))
                 {
-                    await LoggingService.LogDebugAsync($"📋 Chargement contenu version spécifique: {_specificVersionSha}");
+                await LoggingService.LogDebugAsync($"📋 Chargement contenu version spécifique: {_specificVersionSha}");
+                await LoggingService.LogDebugAsync($"📋 Détail version: Version={_specificVersion?.Version}, SHA={_specificVersion?.CommitSha}, ChangesCount={_specificVersion?.ChangesCount}");
                     var doc = await _apiService.GetDocumentWithContentAsync(_document.Id, _specificVersionSha);
                     if (doc != null)
                     {
@@ -230,7 +233,19 @@ namespace TextLabClient
                 else
                 {
                     await LoggingService.LogDebugAsync($"📋 Chargement contenu version actuelle, commit SHA: {_document.CurrentCommitSha}");
-                    var doc = await _apiService.GetDocumentWithContentAsync(_document.Id);
+                    
+                    // ✅ FIX: Si on a un commit SHA spécifique, l'utiliser pour éviter le cache
+                    Document? doc = null;
+                    if (!string.IsNullOrEmpty(_document.CurrentCommitSha))
+                    {
+                        await LoggingService.LogDebugAsync($"🎯 Chargement avec SHA spécifique: {_document.CurrentCommitSha}");
+                        doc = await _apiService.GetDocumentWithContentAsync(_document.Id, _document.CurrentCommitSha);
+                    }
+                    else
+                    {
+                        await LoggingService.LogDebugAsync($"📋 Chargement sans SHA spécifique (version par défaut)");
+                        doc = await _apiService.GetDocumentWithContentAsync(_document.Id);
+                    }
                     if (doc != null)
                     {
                         _documentContent = new DocumentContent
@@ -286,7 +301,7 @@ namespace TextLabClient
 🔸 ID: {_document.Id}
 🔸 Titre: {_document.Title ?? "Sans titre"}
 🔸 Repository: {_document.RepositoryName ?? _document.RepositoryId}
-🔸 Catégorie: {(!string.IsNullOrEmpty(_document.CategoryDisplay) ? _document.CategoryDisplay : _document.Category) ?? "Non catégorisé"}
+
 🔸 Chemin Git: {_document.GitPath ?? "Non spécifié"}
 🔸 Taille: {(_document.FileSizeBytes > 0 ? $"{_document.FileSizeBytes:N0} octets" : "Inconnue")}";
 
@@ -396,18 +411,43 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             try
             {
                 SetStatus("Chargement de l'historique...");
+                await LoggingService.LogInfoAsync($"🔄 LoadDocumentVersions appelé pour document: {_document.Id}");
                 
                 _documentVersions = await _apiService.GetDocumentVersionsAsync(_document.Id);
                 
                 if (_documentVersions != null && _documentVersions.Versions.Count > 0)
                 {
-                    // Afficher les versions exactement comme retournées par l'API
-                    VersionsDataGrid.ItemsSource = _documentVersions.Versions;
+                    // Log détaillé de ce qui a été reçu
+                    await LoggingService.LogInfoAsync($"📊 Versions reçues du serveur: {_documentVersions.TotalVersions} total, {_documentVersions.Versions.Count} dans la liste");
+                    await LoggingService.LogInfoAsync($"🔍 Première version: {_documentVersions.Versions[0].Version} (is_current: {_documentVersions.Versions[0].IsCurrent})");
+                    
+                    // Log de contrôle pour diagnostiquer une éventuelle valeur constante de ChangesCount
+                    foreach (var v in _documentVersions.Versions)
+                    {
+                        await LoggingService.LogDebugAsync($"🔎 Version reçue: Version={v.Version}, SHA={v.CommitSha}, ChangesCount={v.ChangesCount}, Date={v.Date:O}");
+                    }
+                    
                     VersionCountText.Text = $"{_documentVersions.TotalVersions} version(s)";
+
+                    // Fallback: si l'API renvoie des compteurs de changements incohérents (souvent 1),
+                    // recalculer localement via un diff simple par lignes AVANT de binder l'ItemsSource
+                    bool looksWrong = _documentVersions.Versions.All(v => v.ChangesCount <= 1);
+                    if (looksWrong)
+                    {
+                        SetStatus("Recalcul des changements pour chaque version...");
+                        await LoggingService.LogWarningAsync("⚠️ ChangesCount semble incohérent (toutes valeurs <= 1). Recalcul côté client.");
+                        await RecalculateChangesCountsAsync(_document.Id, _documentVersions.Versions);
+                        SetStatus("Historique recalculé");
+                    }
+
+                    // Binder l'ItemsSource une seule fois pour éviter le clignotement (flicker)
+                    VersionsDataGrid.ItemsSource = _documentVersions.Versions;
+                    await LoggingService.LogInfoAsync($"✅ Interface mise à jour avec {_documentVersions.Versions.Count} versions");
                 }
                 else
                 {
                     VersionCountText.Text = "Historique indisponible (API endpoint 404)";
+                    await LoggingService.LogWarningAsync("⚠️ Aucune version reçue du serveur");
                     
                     var dummyVersions = new List<DocumentVersion>
                     {
@@ -427,12 +467,79 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             catch (Exception ex)
             {
                 VersionCountText.Text = $"Erreur: {ex.Message}";
+                await LoggingService.LogErrorAsync($"❌ Erreur LoadDocumentVersions: {ex.Message}");
             }
         }
 
         private void SetStatus(string message)
         {
             StatusText.Text = message;
+        }
+
+        /// <summary>
+        /// Recalcule localement les ChangesCount en comparant le contenu texte entre versions adjacentes.
+        /// La version i est comparée avec la version i+1 (plus ancienne) pour estimer un nombre de lignes modifiées.
+        /// </summary>
+        private async System.Threading.Tasks.Task RecalculateChangesCountsAsync(string documentId, List<DocumentVersion> versions)
+        {
+            try
+            {
+                // Charger le contenu pour chaque version (limité aux N premières si trop coûteux)
+                var contents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var v in versions)
+                {
+                    var key = !string.IsNullOrEmpty(v.CommitSha) ? v.CommitSha : (v.Version ?? string.Empty);
+                    if (string.IsNullOrEmpty(key)) continue;
+                    var content = await _apiService.GetDocumentContentVersionAsync(documentId, key);
+                    contents[key] = content?.Content ?? string.Empty;
+                }
+
+                // Parcourir les paires adjacentes et estimer les changements
+                for (int i = 0; i < versions.Count - 1; i++)
+                {
+                    var newer = versions[i];
+                    var older = versions[i + 1];
+
+                    var newerKey = !string.IsNullOrEmpty(newer.CommitSha) ? newer.CommitSha : (newer.Version ?? string.Empty);
+                    var olderKey = !string.IsNullOrEmpty(older.CommitSha) ? older.CommitSha : (older.Version ?? string.Empty);
+
+                    if (!contents.TryGetValue(newerKey, out var newerText)) newerText = string.Empty;
+                    if (!contents.TryGetValue(olderKey, out var olderText)) olderText = string.Empty;
+
+                    var estimated = EstimateLineChanges(olderText, newerText);
+                    newer.ChangesCount = estimated;
+                }
+
+                // La plus ancienne garde sa valeur (souvent 0)
+                if (versions.Count > 0 && versions[^1].ChangesCount <= 1)
+                {
+                    versions[^1].ChangesCount = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                await LoggingService.LogErrorAsync($"❌ Erreur RecalculateChangesCountsAsync: {ex.Message}");
+            }
+        }
+
+        private static int EstimateLineChanges(string olderText, string newerText)
+        {
+            // Diff ligne-à-ligne simple: additions + suppressions + modifications
+            var olderLines = (olderText ?? string.Empty).Split('\n');
+            var newerLines = (newerText ?? string.Empty).Split('\n');
+
+            int changes = 0;
+            int maxLines = Math.Max(olderLines.Length, newerLines.Length);
+            for (int i = 0; i < maxLines; i++)
+            {
+                var oldLine = i < olderLines.Length ? olderLines[i] : string.Empty;
+                var newLine = i < newerLines.Length ? newerLines[i] : string.Empty;
+                if (!string.Equals(oldLine, newLine, StringComparison.Ordinal))
+                {
+                    changes++;
+                }
+            }
+            return changes;
         }
 
         private async void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -785,7 +892,9 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 SetStatus("Ouverture de la version...");
                 
                 // Ouvrir une nouvelle fenêtre avec cette version spécifique
-                var versionWindow = new DocumentDetailsWindow(_document, _apiService, selectedVersion, selectedVersion.CommitSha ?? "");
+                // Utiliser un fallback robuste: CommitSha si dispo, sinon Version (le backend peut accepter l'un ou l'autre)
+                var versionKey = !string.IsNullOrEmpty(selectedVersion.CommitSha) ? selectedVersion.CommitSha : (selectedVersion.Version ?? "");
+                var versionWindow = new DocumentDetailsWindow(_document, _apiService, _authService, selectedVersion, versionKey);
                 versionWindow.Show();
                 
                 SetStatus($"Version {selectedVersion.Version} ouverte dans une nouvelle fenêtre");
@@ -842,11 +951,16 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
 
                 // Effectuer la restauration avec le vrai endpoint API
                 var versionToRestore = selectedVersion.CommitSha ?? selectedVersion.Version;
+                
+                // ✅ FIX: Utiliser l'auteur original de la version restaurée
+                var userInfo = await _authService.GetCurrentUserAsync();
+                var currentUser = userInfo?.Username ?? "Utilisateur TextLab";
+                
                 var restoreResult = await _apiService.RestoreDocumentVersionAsync(
                     _document.Id, 
                     versionToRestore, 
-                    "TextLab Client User",
-                    $"Restauration de la version {selectedVersion.Version}"
+                    selectedVersion.Author,  // ✅ Auteur original de la version restaurée
+                    $"Restauration de la version {selectedVersion.Version} par {currentUser} via TextLab Client"
                 );
 
                 if (restoreResult != null)
@@ -1521,18 +1635,23 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 await LoggingService.LogDebugAsync($"  👤 Author: {DEFAULT_AUTHOR}");
                 await LoggingService.LogDebugAsync($"  📝 Title: {_document.Title}");
                 await LoggingService.LogDebugAsync($"  📄 Content Length: {newContent?.Length ?? 0}");
-                await LoggingService.LogDebugAsync($"  🏷️ Category: {_document.Category}");
+
                 await LoggingService.LogDebugAsync($"  👁️ Visibility: {_document.Visibility}");
                 await LoggingService.LogDebugAsync($"  📁 Repository: {_document.RepositoryName} ({_document.RepositoryId})");
                 await LoggingService.LogDebugAsync($"  📂 Git Path: {_document.GitPath}");
                 
+                // 🔧 FIX: Récupérer le vrai nom d'utilisateur au lieu d'utiliser une constante générique
+                var userInfo = await _authService.GetCurrentUserAsync();
+                var realAuthor = userInfo?.Username ?? DEFAULT_AUTHOR;
+                await LoggingService.LogDebugAsync($"  👤 Real Author: {realAuthor} (vs {DEFAULT_AUTHOR})");
+                
                 // Effectuer la mise à jour via l'API (GARDER LE TITRE ORIGINAL)
                 var updatedDocument = await _apiService.UpdateDocumentAsync(
                     _document.Id,           // documentId
-                    DEFAULT_AUTHOR,         // author
+                    realAuthor,             // author (VRAI UTILISATEUR)
                     _document.Title,        // title (inchangé)
                     newContent,             // content (modifié)
-                    _document.Category,     // category (inchangé)
+
                     _document.Visibility    // visibility (inchangé)
                 );
                 
@@ -1552,10 +1671,48 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                     
                     await LoggingService.LogInfoAsync($"✅ Nouvelle version créée: commit {updatedDocument.CurrentCommitSha}");
                     
-                    // IMPORTANT: Recharger complètement la fenêtre avec la nouvelle version
+                    // IMPORTANT: Utiliser directement les données de la nouvelle version
                     _document = updatedDocument; // Mettre à jour l'objet document
                     DisableEditMode();
-                    await LoadDocumentDetailsAsync(); // Recharger toutes les données
+                    
+                    // ✅ FIX: Ne PAS recharger le contenu car on a déjà les bonnes données
+                    // Le problème était que LoadDocumentContent() pouvait retourner l'ancienne version
+                    // à cause du cache ou délai de synchronisation GitHub API
+                    
+                    // Mettre à jour directement l'interface avec les nouvelles données
+                    InitializeDocumentInfo(); // Réafficher les métadonnées mises à jour
+                    
+                    // Afficher directement le nouveau contenu sans appel API
+                    if (_documentContent == null) _documentContent = new DocumentContent();
+                    _documentContent.Content = newContent ?? ""; // Utiliser le contenu qu'on vient de sauvegarder
+                    _documentContent.Version = updatedDocument.CurrentCommitSha ?? "current";
+                    DocumentContentTextBox.Text = newContent;
+                    await LoggingService.LogInfoAsync($"📝 Contenu affiché directement depuis la sauvegarde: {newContent.Length} caractères");
+                    
+                    // Attendre un délai pour que GitHub API se synchronise avant de recharger les versions
+                    await LoggingService.LogDebugAsync($"⏳ Attente de synchronisation GitHub API...");
+                    await Task.Delay(2000); // 2 secondes de délai
+                    
+                    // Recharger SEULEMENT l'historique des versions
+                    await LoadDocumentVersions(); // Recharger l'historique des versions
+                    
+                    // 🔄 Forcer la mise à jour de l'interface utilisateur
+                    await LoggingService.LogInfoAsync($"✅ Versions rechargées: {_documentVersions?.TotalVersions ?? 0} version(s)");
+                    
+                    // Forcer le rafraîchissement de la DataGrid
+                    if (VersionsDataGrid != null && _documentVersions?.Versions != null)
+                    {
+                        VersionsDataGrid.ItemsSource = null; // Reset
+                        VersionsDataGrid.ItemsSource = _documentVersions.Versions; // Reassign
+                        VersionsDataGrid.Items.Refresh();
+                        await LoggingService.LogInfoAsync($"🔄 Interface versions rafraîchie: {_documentVersions.Versions.Count} versions visibles");
+                    }
+                    
+                    await LoggingService.LogDebugAsync($"✅ Rechargement terminé - Version affichée: {_document.CurrentCommitSha}");
+                    
+                    // 🔔 Notifier MainWindow que le document a été mis à jour
+                    DocumentUpdated?.Invoke(_document.Id);
+                    await LoggingService.LogInfoAsync($"🔔 Notification envoyée à MainWindow pour document: {_document.Id}");
                 }
                 else
                 {
@@ -1712,7 +1869,7 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
                 new Tag { Id = "demo-2", Name = "Draft", Type = "status", Color = "#FFA726", Icon = "📝", IsActive = true },
                 new Tag { Id = "demo-3", Name = "Review", Type = "status", Color = "#42A5F5", Icon = "👀", IsActive = true },
                 new Tag { Id = "demo-4", Name = "Complete", Type = "status", Color = "#66BB6A", Icon = "✅", IsActive = true },
-                new Tag { Id = "demo-5", Name = "Client", Type = "category", Color = "#AB47BC", Icon = "🏢", IsActive = true }
+                new Tag { Id = "demo-5", Name = "Client", Type = "client", Color = "#AB47BC", Icon = "🏢", IsActive = true }
             };
             
             // Aucun tag associé par défaut
@@ -1824,8 +1981,16 @@ Les endpoints /content et /versions retournent actuellement des erreurs 404.";
             await LoggingService.LogInfoAsync($"🔑 API Service disponible: {(_apiService != null ? "OUI" : "NON")}");
                 
                 // Chercher le tag existant
+                await LoggingService.LogInfoAsync($"🔍 Recherche tag '{tagName}' parmi {_availableTags.Count} tags disponibles");
+                foreach (var tag in _availableTags)
+                {
+                    await LoggingService.LogDebugAsync($"  📌 Tag disponible: '{tag.Name}' (ID: {tag.Id})");
+                }
+                
                 var existingTag = _availableTags.FirstOrDefault(t => 
                     t.Name.Equals(tagName, StringComparison.OrdinalIgnoreCase));
+                    
+                await LoggingService.LogInfoAsync($"🎯 Tag existant trouvé: {existingTag?.Name ?? "AUCUN"}");
                 
                 Tag? tagToAdd;
                 

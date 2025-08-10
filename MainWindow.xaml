@@ -119,6 +119,39 @@
             </MenuItem>
         </Menu>
 
+        <!-- View Selector Bar -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" 
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" 
+                Padding="20,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0" Text="📂 Vue:" FontSize="14" FontWeight="SemiBold" 
+                          VerticalAlignment="Center" Margin="0,0,10,0"/>
+                
+                <ComboBox Grid.Column="1" Name="ViewSelectorComboBox" Width="200" Height="30"
+                         SelectionChanged="ViewSelectorComboBox_SelectionChanged">
+                    <ComboBoxItem Content="📁 Structure Git" Tag="all" IsSelected="True"/>
+                    <ComboBoxItem Content="🌳 Hiérarchie Tags" Tag="hierarchy"/>
+                    <ComboBoxItem Content="👔 Par Client" Tag="client"/>
+                    <ComboBoxItem Content="⚙️ Par Technologie" Tag="technology"/>
+                    <ComboBoxItem Content="📊 Par Statut" Tag="status"/>
+                </ComboBox>
+                
+                <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <TextBlock Name="ViewInfoText" Text="" FontSize="12" Foreground="Gray" 
+                              VerticalAlignment="Center" Margin="0,0,15,0"/>
+                    <Button Name="RefreshViewButton" Content="🔄" Width="30" Height="30" 
+                           Click="RefreshViewButton_Click" ToolTip="Refresh current view"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <!-- Main Content Area -->
         <Grid Margin="15">
             <Grid.RowDefinitions>

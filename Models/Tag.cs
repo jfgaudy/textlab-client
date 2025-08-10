@@ -20,7 +20,7 @@ namespace TextLabClient.Models
         public string Slug { get; set; } = string.Empty;
         
         [JsonProperty("type")]
-        public string Type { get; set; } = string.Empty; // client, technology, status, category, priority, custom
+        public string Type { get; set; } = string.Empty; // client, technology, status, priority, custom
         
         [JsonProperty("color")]
         public string? Color { get; set; } // Code couleur hex #RRGGBB
@@ -67,7 +67,7 @@ namespace TextLabClient.Models
                 "client" => "🏢",
                 "technology" => "⚙️",
                 "status" => "📊",
-                "category" => "📂",
+
                 "priority" => "⭐",
                 "custom" => "🏷️",
                 _ => "🏷️"

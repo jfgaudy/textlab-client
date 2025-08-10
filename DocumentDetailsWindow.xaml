@@ -82,18 +82,7 @@
                                                   TextWrapping="Wrap"/>
                                     </Grid>
                                     
-                                    <Grid Margin="0,8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="100"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Category:" FontWeight="SemiBold"/>
-                                        <Border Grid.Column="1" Background="#0066CC" 
-                                               CornerRadius="12" Padding="8,4" HorizontalAlignment="Left">
-                                            <TextBlock Name="DocumentCategoryText" Text="-" 
-                                                      Foreground="White" FontSize="11" FontWeight="SemiBold"/>
-                                        </Border>
-                                    </Grid>
+
                                     
                                     <Grid Margin="0,8">
                                         <Grid.ColumnDefinitions>

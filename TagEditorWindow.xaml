@@ -214,7 +214,7 @@
                                 <ComboBoxItem Tag="client">👔 Client</ComboBoxItem>
                                 <ComboBoxItem Tag="technology">⚙️ Technologie</ComboBoxItem>
                                 <ComboBoxItem Tag="status">📊 Statut</ComboBoxItem>
-                                <ComboBoxItem Tag="category">📂 Catégorie</ComboBoxItem>
+    
                                 <ComboBoxItem Tag="priority">⭐ Priorité</ComboBoxItem>
                                 <ComboBoxItem Tag="custom">🏷️ Personnalisé</ComboBoxItem>
                             </ComboBox>

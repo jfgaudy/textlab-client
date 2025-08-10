@@ -11,7 +11,7 @@ namespace TextLabClient.Models
         public string Id { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
-        public string Category { get; set; } = string.Empty;
+
         
         // Champs avec mapping JSON pour correspondre à l'API
         [JsonProperty("git_path")]
@@ -35,8 +35,7 @@ namespace TextLabClient.Models
         [JsonProperty("repository_name")]
         public string RepositoryName { get; set; } = string.Empty;
         
-        [JsonProperty("category_display")]
-        public string CategoryDisplay { get; set; } = string.Empty;
+
         
         [JsonProperty("content_preview")]
         public string ContentPreview { get; set; } = string.Empty;
